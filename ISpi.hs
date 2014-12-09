@@ -3,6 +3,8 @@ module ISpi where
 
 
 import Control.Monad
+import Control.Monad.State.Lazy
+import Control.Monad.Identity
 --Pi
 data Pi = Name String
 	| Pair Pi Pi
@@ -25,7 +27,9 @@ data PiProcess = Output Pi Pi PiProcess
                | Match Pi Pi PiProcess
                | Nil
                | Let (Pi,Pi) Pi PiProcess
-               | Case Pi Pi PiProcess Pi PiProcess deriving (Show, Eq)
+               | Case Pi Pi PiProcess Pi PiProcess 
+               | Chain [PiProcess] deriving (Show, Eq)
+badpieProc = Output Zero Zero Nil               
 example1PiProcess = Output (Name "channel") (Name "message") Nil
 example2PiProcess = Input (Name "channel") (Name "message") Nil
 example3CompositionPiProcess = Composition example1PiProcess example2PiProcess
@@ -38,7 +42,8 @@ data PiProcessType = TOutput PiProcessType
                    | TMatch PiProcessType
                    | TNil
                    | TLet PiProcessType
-                   | TCase deriving (Eq, Show)
+                   | TCase 
+                   | TChain [PiProcessType] deriving (Eq, Show)
         
 data Protocol = Proto PiProcess
               | Protocol `Then` Protocol
@@ -72,21 +77,25 @@ testPi2Bad = Pair (Succ (Succ (Succ (Name "name")))) (Pair (Name "namehere") (Pa
 typeCheckPiProcess :: PiProcess -> Either String PiProcessType
 typeCheckPiProcess (Input pi1 pi2 piProPrime) = case typeCheckPi pi1 of
       Left err   -> Left ("term 'Input' type fail on first pi argument: " ++ err)
-      Right tpi1 -> case typeCheckPi pi2 of
-         Left err   -> Left ("term 'Input' type fail on second pi argument: " ++ err)
-         Right tpi2 -> case typeCheckPiProcess piProPrime of
-            Left err     -> Left ("terpm 'Input' type fail on process subterm: " ++ err)
-            Right primeT -> Right (TInput primeT)
+      Right tpi1 -> if acceptablePi TName tpi1 then
+         case typeCheckPi pi2 of
+            Left err   -> Left ("term 'Input' type fail on second pi argument: " ++ err)
+            Right tpi2 -> case typeCheckPiProcess piProPrime of
+               Left err     -> Left ("terpm 'Input' type fail on process subterm: " ++ err)
+               Right primeT -> Right (TInput primeT)
+      else Left ("Input on non-channel. Expected TName for channel. Actual type: " ++ (show tpi1))
 typeCheckPiProcess (Output pi1 pi2 piProPrime) = case typeCheckPi pi1 of
       Left err   -> Left ("term 'Output' type fail on first pi argument: " ++ err)
-      Right tpi1 -> case typeCheckPi pi2 of
-         Left err   -> Left ("term 'Output' type fail on second pi argument: " ++ err)
-         Right tpi2 -> case typeCheckPiProcess piProPrime of
-            Left err     -> Left ("terpm 'Output' type fail on process subterm: " ++ err)
-            Right primeT -> Right (TOutput primeT)
+      Right tpi1 -> if acceptablePi TName tpi1 then
+         case typeCheckPi pi2 of
+            Left err   -> Left ("term 'Output' type fail on second pi argument: " ++ err)
+            Right tpi2 -> case typeCheckPiProcess piProPrime of
+               Left err     -> Left ("terpm 'Output' type fail on process subterm: " ++ err)
+               Right primeT -> Right (TOutput primeT)
+         else Left ("Output on non-channel. Expected TName for channel. Actual type: " ++ (show tpi1))
 typeCheckPiProcess (Composition proc1 proc2) = case typeCheckPiProcess proc1 of
       Left err     -> Left ("Type error in term 'Composition', first process: " ++ err)
-      Right proc1T -> case typeCheckPiProcess proc1 of
+      Right proc1T -> case typeCheckPiProcess proc2 of
          Left err     -> Left ("Type error in term 'Composition', second process: " ++ err)
          Right proc2T -> Right (TComposition proc1T proc2T)
 typeCheckPiProcess (Restriction pi1 proc) = case typeCheckPi pi1 of
@@ -121,12 +130,24 @@ typeCheckPiProcess (Case pi0 pi1 piproc1 pi2 piproc2) = case (typeCheckPi pi0, t
                                                                      (Left err)       -> Left ("Type Error in second process of Case: " ++ err)
                                                 (Left err)       -> Left ("Type Error in first process of Case: " ++ err)
       triplet                              -> Left ("Error in a pi term of Case statement. Actual types: " ++ join ((map (either show show) (listify3 triplet))))
-      
+typeCheckPiProcess (Chain procs) = let types = map typeCheckPiProcess procs in
+                                    case foldr (\eitherType ansList -> 
+                                                   case eitherType of 
+                                                        l@(Left err) -> l:ansList
+                                                        (Right _) -> ansList) [] types of
+                                         []   -> Right (TChain (map (either (const TNil) id) types)) --note this is safe since we have established they are ALL right side
+                                         errs -> Left ("The following errors were found in Chain:\n\t" ++ (join (map (\a -> (show a) ++ "\n\t") errs)))
+                              
+                                    
 acceptablePi :: PiType -> PiType -> Bool
 acceptablePi (TPair _ _) type2 = case type2 of
                                   (TPair _ _) -> True
                                   (TVar)      -> True
                                   _           -> False
+acceptablePi (TName) type2 = case type2 of
+                                   (TName) -> True
+                                   (TVar)  -> True
+                                   _       -> False
                                  
                      
 listify2 :: (a,a) -> [a]
@@ -136,8 +157,31 @@ listify3 :: (a,a,a) -> [a]
 listify3 (x,y,z) = [x,y,z]
 
                                                                                                                                                                                       
-                                                                                           
-                                                                                           
-                                                                                           
+-- Pi example 2.3.1
+a_m = Output (Name "C_ab") Zero Nil --A(M) sends zero on channel AB
+b   = Chain [(Input (Name "C_ab") (Var "x") Nil), Restriction (Var "x") Nil]
+inst_m = Restriction (Name "C_ab") (Composition a_m b)
+
+badchain = Chain [ badpieProc, a_m, a_m,badpieProc, b]
+
+data GammaMembers = VarBind (Pi, Pi)
+                  | Restricted Pi
+                  
+type Gamma = [GammaMembers]
+   
+type MyStateT = StateT Gamma Identity PiProcess
+
+--mystateT = 
+{-
+
+typeandReduce :: PiProcess -> Either String PiProcess
+typeandReduce piproc = case typeCheckPiProcess piproc of
+                            Left err -> Left ("TYPE ERROR: " ++ err)
+                            Right t  -> reduce piproc
+                            -}
+                            
+test = StateT []                            
+-- reduce :: PiProcess -> Piprocess
+-- reduce piProc = 
                                                                                            
                                                                                            
