@@ -34,6 +34,7 @@ data PiProcess = Output Pi Pi PiProcess
                | Let (Pi,Pi) Pi PiProcess
                | Case Pi Pi PiProcess Pi PiProcess 
                | Chain [PiProcess]
+			   | EmptyChain
                | Stuck deriving (Show, Eq)
 badpieProc = Output Zero Zero Nil               
 example1PiProcess = Output (Name "channel") (Name "message") Nil
@@ -194,7 +195,11 @@ typeandReduce piproc = case typeCheckPiProcess piproc of
                             Left err -> Left ("TYPE ERROR: " ++ err)
                             Right t  -> reduce piproc
                             -}
-
+runReduceShow term= do
+					x <- runReduce term
+					print (fst x)
+					s <- readTVarIO (snd (snd x))
+					print "END"
 runReduce :: PiProcess -> IO (PiProcess, (Gamma,GlobalChannels))
 runReduce piProc =  do 
                      emtyTVar <-newTVarIO []
@@ -240,44 +245,55 @@ isPresent t (x:xs) = if t == (fst x) then True else isPresent t xs
 
 findMVar ::  Pi -> [(Pi,MVar Pi)] -> Maybe (MVar Pi) 
 findMVar pi1 [] = Nothing
-findMVar pi1 (x:xs) -> if pi1 == (fst x) then Just (snd x)
+findMVar pi1 (x:xs) = if pi1 == (fst x) then Just (snd x)
                                          else findMVar pi1 xs
  
- 
+
 reduce :: PiProcess ->  MyStateT PiProcess
 reduce (Composition proc1 proc2)  = do
-                                                
-                              reduce Nil 
-                              
+                                      m1 <- liftIO newEmptyMVar
+                                      m2 <- liftIO newEmptyMVar
+                                      tid <- liftIO ( forkIO (do
+																--print "efe"
+																p1 <- return (reduce proc1)
+																putMVar m1 p1
+																print "Done 1"))
+                                      tid2 <- liftIO ( forkIO (do
+																--print "efe"
+																p2 <- return (reduce proc2)
+																putMVar m2 p2
+																print "Done 2"))
+                                      p1res <- liftIO $ takeMVar m1
+                                      p2res <- liftIO $ takeMVar m2
+                                      pi1res2 <- p1res
+                                      pi2res2 <- p2res
+                                      return (Composition pi1res2 pi2res2) --(Composition p1res p2res)                            
 reduce (Output pi1 pi2 piproc)   = do
                               s <- get
-                              let tvarList = snd s
-                              --tvarListUnwraped <-readTVarIO tvarListd
-                             -- if isPresent then 
+                              let tvarList = snd s 
                               liftIO $ atomically $ do 
                                                       (modifyTVar tvarList (addMessage pi1 pi2))
---                               globalStateList <-liftIO $ readIORef ioRefList
---                               newglob <-liftIO $ addMessage pi1 pi2 globalStateList
---                               put (fst s, 
-                              --let f <- (addMessage pi1 pi2)
-                              --liftIO (modifyIORef ioRefList f )
-                              
                               reduce piproc
-                              --withStateT (addMessage pi1 pi2) (reduce piproc) -- update the state and continue.
-                               
 reduce (Input pi1 pi2 piproc)   = do
                               s <- get
                               let tvarList = snd s
-                              tvarListUnwrapped <- readTVarIO
-                              case findpair pi1 tvarListUnwraped of
-                                   Just mvar -> do
-                                      val <- takeMVar mvar
-                                      
-                                   Nothing -> liftIO $ atomically $ do 
-                                                      (modifyTVar tvarList (addMessage pi1 pi2))
-                              
-                              
-                              reduce piproc                              
+                              tvarListUnwrapped <-liftIO $ readTVarIO tvarList
+                              case findMVar pi1 tvarListUnwrapped of
+                                   Nothing -> do
+												liftIO (putStrLn "I didn't find that mvar so now I have to create one.")
+												mvar <- liftIO $ newEmptyMVar -- pi2
+												let pair = (pi1,mvar)
+												liftIO $ atomically $ (modifyTVar tvarList (\list -> pair : list))
+                                   Just v  -> do
+												liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to gamma"))												
+                              tvarListUnwrapped' <-liftIO $ readTVarIO tvarList --do I need to do this again?
+                              case findMVar pi1 tvarListUnwrapped' of
+								Just mvar -> do
+												val <-liftIO $ takeMVar mvar -- we block until we get a message
+												s <- get
+												put ((VarBind (pi1, val)):(fst s),snd s) -- update the state to have this variable
+												reduce piproc -- finally do the next process.
+								Nothing -> return Stuck -- this should not possibly happen. We either block, or put a new mvar in the state to block on.                              
 reduce (Restriction pi1 piproc)  = do
                               s <- get
                               let s' =  ( (Restricted pi1 : (fst s)), snd s)            
@@ -300,9 +316,11 @@ reduce (Case pi0 pi1 piproc1 pi2 piproc2) = do
                                                                else return Stuck                              
 reduce (Chain procs) = do                       
                         case procs of                            
-                            []     -> return Stuck
+                            []     -> return EmptyChain
                             (x:xs) -> do
+                              liftIO $ print x
                               r <- reduce x
+                              liftIO $ putStrLn ("r: " ++ (show r))							  
                               newState <- get
                               case r of
                                    Stuck -> return Stuck
