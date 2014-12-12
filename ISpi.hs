@@ -34,7 +34,8 @@ data PiProcess = Output Pi Pi PiProcess
                | Let (Pi,Pi) Pi PiProcess
                | Case Pi Pi PiProcess Pi PiProcess 
                | Chain [PiProcess]
-			   | EmptyChain
+	       | EmptyChain
+               | Value Pi
                | Stuck deriving (Show, Eq)
 badpieProc = Output Zero Zero Nil               
 example1PiProcess = Output (Name "channel") (Name "message") Nil
@@ -271,15 +272,17 @@ reduce (Composition proc1 proc2)  = do
                                       pi1res2 <- p1res
                                       pi2res2 <- p2res
                                       return (Composition pi1res2 pi2res2) --(Composition p1res p2res)                            
-reduce (Output pi1 pi2 piproc)   = do
+reduce (Output pi1' pi2' piproc)   = do
+                              pi1 <- subIfVar pi1'
+                              pi2 <- subIfVar pi2'
                               s <- get
                               let tvarList = snd s 
                               liftIO $ atomically $ do 
                                                       (modifyTVar tvarList (addMessage pi1 pi2))
                               reduce piproc
-reduce (Input pi1 pi2 piproc)   = do
-                             -- case pi1' of
-							--    q@(Var qq) -> 
+reduce (Input pi1' pi2 piproc)   = do
+                              pi1 <- subIfVar pi1'     
+                              --pi2 is of course a variable.
                               s <- get
                               let tvarList = snd s
                               tvarListUnwrapped <-liftIO $ readTVarIO tvarList
@@ -298,24 +301,31 @@ reduce (Input pi1 pi2 piproc)   = do
 												s <- get
 												put ((VarBind (pi2, val)):(fst s),snd s) -- update the state to have this variable
 												liftIO $ putMVar mvar val -- put the value back because anyone can read the channel multiple times. hopefully this doesn't break outputing to that channel a second time. 
+												--piproc' <- substituteAllInstancesOf pi2 val piproc
 												reduce piproc -- finally do the next process.
 								Nothing -> return Stuck -- this should not possibly happen. We either block, or put a new mvar in the state to block on.                              
 reduce (Restriction pi1 piproc)  = do
-                              s <- get
+                              s <- get                        
                               let s' =  ( (Restricted pi1 : (fst s)), snd s)            
                               put s'
                               reduce piproc 
-reduce (Match pi1 pi2 piproc)    = do
+reduce (Match pi1' pi2' piproc)    = do
+                              pi1 <- subIfVar pi1'
+                              pi2 <- subIfVar pi2'
                               if pi1 == pi2 then reduce piproc
                                             else return Stuck
-reduce (Let (pi1, pi2) pi3 piproc) = do
+reduce (Let (pi1, pi2) pi3' piproc) = do
+                              pi3 <- subIfVar pi3'
                               s <- get
                               case (pi1,pi2,pi3) of
                                    (v1@(Var var1),v2@(Var var2),(Pair p1 p2))-> do
                                       put ((VarBind (v1,p1)):(VarBind (v2,p2)):(fst s), snd s)
                                       reduce piproc
                                    (_) -> return Stuck
-reduce (Case pi0 pi1 piproc1 pi2 piproc2) = do
+reduce (Case pi0' pi1' piproc1 pi2' piproc2) = do
+                              pi0 <- subIfVar pi0'
+                              pi1 <- subIfVar pi1'
+                              pi2 <- subIfVar pi2'
                               s <- get
                               if pi0 == pi1 then reduce piproc1
                                             else if pi0 == pi2 then reduce piproc2
@@ -330,13 +340,50 @@ reduce (Chain procs) = do
                               newState <- get
                               case r of
                                    Stuck -> return Stuck
-                                   _     -> reduce (Chain xs)
-                               
-reduce Nil  = return Nil                              
+                                   _     -> reduce (Chain xs)                               
+reduce Nil  = return Nil
+reduce (Value pi') = do
+                     pi <- subIfVar pi'
+                     return (Value pi)
+subIfVar :: Pi -> MyStateT Pi
+subIfVar pi = do
+               s <- get
+               let gamma = fst s
+               case myLookup pi gamma of
+                    Nothing -> return pi
+                    Just val -> return val
+                    
+myLookup :: Pi -> Gamma -> Maybe Pi
+myLookup pi []     = Nothing
+myLookup pi (t:xs) = case t of
+                          VarBind (x,y) -> if x == pi then return y else myLookup pi xs 
+                          _ -> myLookup pi xs
+{-
+substituteAllInstancesOf:: Pi -> Pi -> PiProcess -> MyStateT PiProcess
+substituteAllInstancesOf var val (Composition proc1 proc2)= do
+                                                               proc1' <- substituteAllInstancesOf var val proc1
+                                                               proc2' <- substituteAllInstancesOf var val proc2
+                                                               return (Composition proc1' proc2')
+substituteAllInstancesOf var val (Output pi1 pi2 piproc)  = do
+                                                               if pi1 == var then pi1' = val else pi1' = pi1 
+                                                               if pi2 == var then pi2' = val else pi2' = pi2 
+                                                               piproc' = 
+substituteAllInstancesOf var val (Input pi1 pi2 piproc)   = do
+substituteAllInstancesOf var val (Restriction pi1 piproc)  = doc 
+substituteAllInstancesOf var val (Match pi1 pi2 piproc)    = do
+substituteAllInstancesOf var val (Let (pi1, pi2) pi3 piproc) = do
+substituteAllInstancesOf var val (Case pi0 pi1 piproc1 pi2 piproc2)                                                      
+substituteAllInstancesOf var val (Chain procs) = do                                                     
+substituteAllInstancesOf var val Nil  = return Nil 
+-}
 
 --page 13 example protocol
 a_m2 = Restriction (Name "C_ab") (Output (Name "C_as") (Name "C_ab") (Output (Name "C_ab") (Name "Message from a to b should be here") Nil))
 s    = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") Nil)
-b2   = Input (Name "C_sb") (Var "xb") (Input (Name "C_ab") (Var "messageFromA") Nil) --(Input (Var "xb") (Var "messageFromA") Nil)
+b2   = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") Nil) --(Input (Var "xb") (Var "messageFromA") Nil)
 inst_m2 = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2 (Composition s b2)))
-                 
+
+a_m2'    = Restriction (Name "C_ab") (Output (Name "C_as") (Name "C_ab") (Output (Name "C_ab") (Name "Message from a to b should be here") Nil))
+s'       = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") (Value (Var "x")))
+b2'      = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
+inst_m2' = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2' (Composition s' b2')))
