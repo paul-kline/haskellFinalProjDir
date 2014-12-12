@@ -199,6 +199,8 @@ runReduceShow term= do
 					x <- runReduce term
 					print (fst x)
 					s <- readTVarIO (snd (snd x))
+					let gamma = fst(snd x)
+					putStrLn ("Gamma: " ++ (show gamma))
 					print "END"
 runReduce :: PiProcess -> IO (PiProcess, (Gamma,GlobalChannels))
 runReduce piProc =  do 
@@ -226,9 +228,10 @@ addMessage' pi1 pi2 [] = do
                            return [(pi1,mvar)]
 addMessage' pi1 pi2 (x:xs) = if pi1 == (fst x) then
                                  do
-                                    takeMVar (snd x)
-                                    putMVar (snd x) pi2
-                                    return (x:xs)
+									maybeTake <- tryTakeMVar (snd x) -- this takes the value if there was one. We throw this away. 
+									--takeMVar (snd x)
+									putMVar (snd x) pi2
+									return (x:xs)
                              else
                                  do
                                     r <- addMessage' pi1 pi2 xs
@@ -275,6 +278,8 @@ reduce (Output pi1 pi2 piproc)   = do
                                                       (modifyTVar tvarList (addMessage pi1 pi2))
                               reduce piproc
 reduce (Input pi1 pi2 piproc)   = do
+                             -- case pi1' of
+							--    q@(Var qq) -> 
                               s <- get
                               let tvarList = snd s
                               tvarListUnwrapped <-liftIO $ readTVarIO tvarList
@@ -285,13 +290,14 @@ reduce (Input pi1 pi2 piproc)   = do
 												let pair = (pi1,mvar)
 												liftIO $ atomically $ (modifyTVar tvarList (\list -> pair : list))
                                    Just v  -> do
-												liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to gamma"))												
+												liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to state"))												
                               tvarListUnwrapped' <-liftIO $ readTVarIO tvarList --do I need to do this again?
                               case findMVar pi1 tvarListUnwrapped' of
 								Just mvar -> do
 												val <-liftIO $ takeMVar mvar -- we block until we get a message
 												s <- get
-												put ((VarBind (pi1, val)):(fst s),snd s) -- update the state to have this variable
+												put ((VarBind (pi2, val)):(fst s),snd s) -- update the state to have this variable
+												liftIO $ putMVar mvar val -- put the value back because anyone can read the channel multiple times. hopefully this doesn't break outputing to that channel a second time. 
 												reduce piproc -- finally do the next process.
 								Nothing -> return Stuck -- this should not possibly happen. We either block, or put a new mvar in the state to block on.                              
 reduce (Restriction pi1 piproc)  = do
@@ -328,4 +334,9 @@ reduce (Chain procs) = do
                                
 reduce Nil  = return Nil                              
 
+--page 13 example protocol
+a_m2 = Restriction (Name "C_ab") (Output (Name "C_as") (Name "C_ab") (Output (Name "C_ab") (Name "Message from a to b should be here") Nil))
+s    = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") Nil)
+b2   = Input (Name "C_sb") (Var "xb") (Input (Name "C_ab") (Var "messageFromA") Nil) --(Input (Var "xb") (Var "messageFromA") Nil)
+inst_m2 = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2 (Composition s b2)))
                  
