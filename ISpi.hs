@@ -10,12 +10,14 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
 import System.IO.Unsafe
+
+
 --Pi
 data Pi = Name String
 	| Pair Pi Pi
 	| Zero
 	| Succ Pi
-        | Var String deriving (Show, Eq)        
+    | Var String deriving (Show, Eq)        
 --Pi types
 data PiType = TName   
             | TPair PiType PiType
@@ -34,13 +36,11 @@ data PiProcess = Output Pi Pi PiProcess
                | Let (Pi,Pi) Pi PiProcess
                | Case Pi Pi PiProcess Pi PiProcess 
                | Chain [PiProcess]
-	       | EmptyChain
+               | EmptyChain
                | Value Pi
+			   | OrderedOutput Int String String Pi PiProcess
                | Stuck deriving (Show, Eq)
-badpieProc = Output Zero Zero Nil               
-example1PiProcess = Output (Name "channel") (Name "message") Nil
-example2PiProcess = Input (Name "channel") (Name "message") Nil
-example3CompositionPiProcess = Composition example1PiProcess example2PiProcess
+
 --PiProcess types
 data PiProcessType = TOutput PiProcessType
                    | TInput PiProcessType
@@ -51,6 +51,7 @@ data PiProcessType = TOutput PiProcessType
                    | TNil
                    | TLet PiProcessType
                    | TCase 
+				   | TValue
                    | TChain [PiProcessType] deriving (Eq, Show)
         
 data Protocol = Proto PiProcess
@@ -77,10 +78,6 @@ typeCheckPi x@(Succ t) = case typeCheckPi t of
 typeCheckPi (Var _) = Right TVar                              
 typeCheckPi x = Left ("Type failure: " ++ (show x))
 
-
-testPiGood = Pair (Succ (Succ (Succ Zero))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
-testPi1Good = Pair (Succ (Succ (Succ (Var "varhere1")))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
-testPi2Bad = Pair (Succ (Succ (Succ (Name "name")))) (Pair (Name "namehere") (Pair Zero (Name "varhere")))
 
 typeCheckPiProcess :: PiProcess -> Either String PiProcessType
 typeCheckPiProcess (Input pi1 pi2 piProPrime) = case typeCheckPi pi1 of
@@ -148,7 +145,8 @@ typeCheckPiProcess (Chain procs) = let types = map typeCheckPiProcess procs in
                                                         (Right _) -> ansList) [] types of
                                          []   -> Right (TChain (map (either (const TNil) id) types)) --note this is safe since we have established they are ALL right side
                                          errs -> Left ("The following errors were found in Chain:\n\t" ++ (join (map (\a -> (show a) ++ "\n\t") errs)))
-                              
+typeCheckPiProcess (Value val)   = Right TValue 
+typeCheckPiProcess (OrderedOutput _ from to pi piproc)   = typeCheckPiProcess (Output (Name ("C_" ++ from ++ to)) pi piproc)
                                     
 acceptablePi :: PiType -> PiType -> Bool
 acceptablePi (TPair _ _) type2 = case type2 of
@@ -172,30 +170,30 @@ listify2 (x,y) = [x,y]
 listify3 :: (a,a,a) -> [a]
 listify3 (x,y,z) = [x,y,z]
 
-                                                                                                                                                                                      
--- Pi example 2.3.1
-a_m = Output (Name "C_ab") Zero Nil --A(M) sends zero on channel AB
-b   = Chain [(Input (Name "C_ab") (Var "x") Nil), Restriction (Var "x") Nil]
-inst_m = Restriction (Name "C_ab") (Composition a_m b)
-
-badchain = Chain [ badpieProc, a_m, a_m,badpieProc, b]
-
 data GammaMembers = VarBind (Pi, Pi)
                   | Restricted Pi
-                  | Message Pi Pi deriving (Show, Eq)
+                  | Mess Pi Pi deriving (Show, Eq)
 type Gamma = [GammaMembers]
 type GlobalChannels = (TVar [(Pi,MVar Pi)]) 
 type MyStateT a = StateT (Gamma, GlobalChannels) IO a
 
 
 --mystateT = 
-{-
-
-typeandReduce :: PiProcess -> Either String PiProcess
+typeandReduce :: PiProcess -> IO () --Either String PiProcess
 typeandReduce piproc = case typeCheckPiProcess piproc of
-                            Left err -> Left ("TYPE ERROR: " ++ err)
-                            Right t  -> reduce piproc
-                            -}
+                            Left err -> do
+							              putStrLn (("TYPE ERROR: " ++ err));
+										  putStrLn "";
+										  putStrLn "";
+										  return ()
+                            Right t  -> do
+										  putStrLn "PASSED TYPE CHECKER."
+										  putStrLn "TYPE:"
+										  print t 
+										  putStrLn ""
+										  runReduceShow piproc
+                            
+
 runReduceShow term= do
 					x <- runReduce term
 					print (fst x)
@@ -210,19 +208,8 @@ runReduce piProc =  do
                     -- print x
                      return x
 -- 
-test = Restriction (Var "varname") (Restriction (Var "varname2") Nil) 
 
-{---PiProcess       
-data PiProcess = Output Pi Pi PiProcess
-               | Input Pi (Pi) PiProcess --Input Pi (Var String) PiProcess
-               | Composition PiProcess PiProcess
-               | Restriction (Pi) PiProcess --Restriction (Name String) PiProcess
-               | Replication PiProcess
-               | Match Pi Pi PiProcess
-               | Nil
-               | Let (Pi,Pi) Pi PiProcess
-               | Case Pi Pi PiProcess Pi PiProcess 
-               | Chain [PiProcess] deriving (Show, Eq)-}
+
 addMessage' :: Pi -> Pi -> [(Pi,MVar Pi)] -> IO [(Pi,MVar Pi)]
 addMessage' pi1 pi2 [] = do 
                            mvar <- newMVar pi2
@@ -239,9 +226,7 @@ addMessage' pi1 pi2 (x:xs) = if pi1 == (fst x) then
                                     return ([x] ++ r)
 
 addMessage :: Pi -> Pi -> [(Pi,MVar Pi)] ->  [(Pi,MVar Pi)]
-addMessage pi1 pi2 xs = unsafePerformIO $ addMessage' pi1 pi2 xs
-
-                            
+addMessage pi1 pi2 xs = unsafePerformIO $ addMessage' pi1 pi2 xs                         
 
 isPresent ::  Pi -> [(Pi,MVar Pi)] -> Bool
 isPresent _ []  = False
@@ -252,7 +237,6 @@ findMVar pi1 [] = Nothing
 findMVar pi1 (x:xs) = if pi1 == (fst x) then Just (snd x)
                                          else findMVar pi1 xs
  
-
 reduce :: PiProcess ->  MyStateT PiProcess
 reduce (Composition proc1 proc2)  = do
                                       m1 <- liftIO newEmptyMVar
@@ -280,6 +264,7 @@ reduce (Output pi1' pi2' piproc)   = do
                               liftIO $ atomically $ do 
                                                       (modifyTVar tvarList (addMessage pi1 pi2))
                               reduce piproc
+reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ from ++ to)) pi piproc)							  
 reduce (Input pi1' pi2 piproc)   = do
                               pi1 <- subIfVar pi1'     
                               --pi2 is of course a variable.
@@ -345,6 +330,7 @@ reduce Nil  = return Nil
 reduce (Value pi') = do
                      pi <- subIfVar pi'
                      return (Value pi)
+					 
 subIfVar :: Pi -> MyStateT Pi
 subIfVar pi = do
                s <- get
@@ -358,25 +344,25 @@ myLookup pi []     = Nothing
 myLookup pi (t:xs) = case t of
                           VarBind (x,y) -> if x == pi then return y else myLookup pi xs 
                           _ -> myLookup pi xs
-{-
-substituteAllInstancesOf:: Pi -> Pi -> PiProcess -> MyStateT PiProcess
-substituteAllInstancesOf var val (Composition proc1 proc2)= do
-                                                               proc1' <- substituteAllInstancesOf var val proc1
-                                                               proc2' <- substituteAllInstancesOf var val proc2
-                                                               return (Composition proc1' proc2')
-substituteAllInstancesOf var val (Output pi1 pi2 piproc)  = do
-                                                               if pi1 == var then pi1' = val else pi1' = pi1 
-                                                               if pi2 == var then pi2' = val else pi2' = pi2 
-                                                               piproc' = 
-substituteAllInstancesOf var val (Input pi1 pi2 piproc)   = do
-substituteAllInstancesOf var val (Restriction pi1 piproc)  = doc 
-substituteAllInstancesOf var val (Match pi1 pi2 piproc)    = do
-substituteAllInstancesOf var val (Let (pi1, pi2) pi3 piproc) = do
-substituteAllInstancesOf var val (Case pi0 pi1 piproc1 pi2 piproc2)                                                      
-substituteAllInstancesOf var val (Chain procs) = do                                                     
-substituteAllInstancesOf var val Nil  = return Nil 
--}
 
+
+						  
+						  
+						  
+testPiGood = Pair (Succ (Succ (Succ Zero))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
+testPi1Good = Pair (Succ (Succ (Succ (Var "varhere1")))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
+testPi2Bad = Pair (Succ (Succ (Succ (Name "name")))) (Pair (Name "namehere") (Pair Zero (Name "varhere")))						  
+
+badpieProc = Output Zero Zero Nil   --tries to output a channel that is NOT a name.            
+example1PiProcess = Output (Name "channel") (Name "message") Nil
+example2PiProcess = Input (Name "channel") (Name "message") Nil
+example3CompositionPiProcess = Composition example1PiProcess example2PiProcess                                                                                                                                                                                       
+-- Pi example 2.3.1
+a_m = Output (Name "C_ab") Zero Nil --A(M) sends zero on channel AB
+b   = Chain [(Input (Name "C_ab") (Var "x") Nil), Restriction (Var "x") Nil]
+inst_m = Restriction (Name "C_ab") (Composition a_m b)
+test = Restriction (Var "varname") (Restriction (Var "varname2") Nil) 
+badchain = Chain [ badpieProc, a_m, a_m,badpieProc, b]						  
 --page 13 example protocol
 a_m2 = Restriction (Name "C_ab") (Output (Name "C_as") (Name "C_ab") (Output (Name "C_ab") (Name "Message from a to b should be here") Nil))
 s    = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") Nil)
