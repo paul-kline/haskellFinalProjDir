@@ -50,9 +50,9 @@ s_shared       = Input (Name "C_as") (Var "x") (OrderedOutput 2 "s" "b" (Var "x"
 b2_shared      = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
 inst_m2_shared = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2_shared (Composition s_shared b2_shared)))
 
-a_mSpi1 = OrderedOutput 1 "a" "b" (Encryption (Name "encrypted secret message!") (Name "SECRETabKEY")) Nil 
-bSpi1   = Input (Name "C_ab") (Var "x") (CaseDecrypt (Var "x") (Var "res") (Name "SECRETabKEY") (Value (Var "res")))    
-inst_mSPI = Restriction (Name "SECRETabKEY") (Composition a_mSpi1 bSpi1)
+a_mSpi321 = OrderedOutput 1 "a" "b" (Encryption (Name "encrypted secret message!") (Name "SECRETabKEY")) Nil 
+bSpi321   = Input (Name "C_ab") (Var "x") (CaseDecrypt (Var "x") (Var "res") (Name "SECRETabKEY") (Value (Var "res")))    
+inst_mSPI321 = Restriction (Name "SECRETabKEY") (Composition a_mSpi321 bSpi321)
 
 a_mSpi1WRONGKEY = OrderedOutput 1 "a" "b" (Encryption (Name "encrypted secret message!") (Name "SECRETabKEY")) Nil 
 bSpi1WRONGKEY   = Input (Name "C_ab") (Var "x") (CaseDecrypt (Var "x") (Var "res") (Name "SECRETabKEYwrong") (Value (Var "res")))    

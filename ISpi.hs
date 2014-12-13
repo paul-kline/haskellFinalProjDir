@@ -218,7 +218,12 @@ typeandReduce piproc = case typeCheckPiProcess piproc of
 										  putStrLn ""
 										  runReduceShow piproc
                             
-
+runForGamma :: PiProcess ->IO Gamma
+runForGamma piproc = do
+						x <- runReduce piproc
+						let gamma = fst (snd x)
+						return gamma
+						
 runReduceShow term= do
 					putStrLn "BEGINNING REDUCTION"                    
 					x <- runReduce term
@@ -226,7 +231,7 @@ runReduceShow term= do
 					print (fst x)
 					s <- readTVarIO (snd (snd x))
 					let gamma = fst(snd x)
-					--putStrLn ("Gamma: " ++ (show gamma))
+					putStrLn ("Gamma: " ++ (show gamma))
 					print "END"
 runReduce :: PiProcess -> IO (PiProcess, (Gamma,GlobalChannels))
 runReduce piProc =  do 
