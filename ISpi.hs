@@ -55,9 +55,9 @@ data PiProcess = Output Pi Pi PiProcess
 instance Show PiProcess where
 	show (Output chan mess nextproc) = (show chan) ++ "<\"" ++ (show mess) ++ "\"> . " ++ (show nextproc)
 	show (Input chan mess nextproc) = (show chan) ++ "(" ++ (show mess) ++ ") . " ++ (show nextproc)
-	show (Composition p1 (Composition p2 p3))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ (show p3) ++ " "
-	show (Composition p1 (Composition p2 (Composition p3 p4)))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)
 	show (Composition p1 (Composition p2 (Composition p3 (Composition p4 p5))))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)  ++ " |\n " ++ (show p5)
+	show (Composition p1 (Composition p2 (Composition p3 p4)))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)
+	show (Composition p1 (Composition p2 p3))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " "
 	show (Composition p1 p2)         = "\n " ++ (show p1) ++ " |\n " ++ (show p2)
 	show (Restriction pi piproc)     = "(v" ++ (show pi) ++ ")" ++ (show piproc)
 	show (Replication piproc)        = "!" ++ (show piproc)
@@ -81,8 +81,8 @@ data PiProcessType = TOutput PiProcessType
                    | TNil
                    | TLet PiProcessType
                    | TCase 
-				   | TValue
-				   | TCaseDecryption PiProcessType
+                   | TValue
+                   | TCaseDecryption PiProcessType
                    | TChain [PiProcessType] deriving (Show, Eq)
 				   
 
