@@ -17,13 +17,15 @@ data Pi = Name String
 	| Pair Pi Pi
 	| Zero
 	| Succ Pi
-    | Var String deriving (Show, Eq)        
+    | Var String 
+	| Encryption Pi Pi deriving (Show, Eq)        
 --Pi types
 data PiType = TName   
             | TPair PiType PiType
             | TSucc
             | TVar
-            | TZero deriving (Show, Eq)
+            | TZero 
+			| TEncryption deriving (Show, Eq)
 
 --PiProcess       
 data PiProcess = Output Pi Pi PiProcess
@@ -39,6 +41,7 @@ data PiProcess = Output Pi Pi PiProcess
                | EmptyChain
                | Value Pi
 			   | OrderedOutput Int String String Pi PiProcess
+			   | CaseDecrypt Pi Pi Pi PiProcess
                | Stuck deriving (Show, Eq)
 
 --PiProcess types
@@ -52,12 +55,10 @@ data PiProcessType = TOutput PiProcessType
                    | TLet PiProcessType
                    | TCase 
 				   | TValue
+				   | TCaseDecryption PiProcessType
                    | TChain [PiProcessType] deriving (Eq, Show)
         
-data Protocol = Proto PiProcess
-              | Protocol `Then` Protocol
-        
-        
+
 
 
 
@@ -75,7 +76,12 @@ typeCheckPi x@(Succ t) = case typeCheckPi t of
                               Right TSucc -> Right TSucc
                               Right TVar  -> Right TSucc -- variables are okay, but may cause runtime error
                               Right _ -> Left ("Succ of non-numberic type: " ++ (show x))
-typeCheckPi (Var _) = Right TVar                              
+typeCheckPi (Var _) = Right TVar    
+typeCheckPi (Encryption pi1 pi2) =  case typeCheckPi pi1 of
+                                        Left err   -> Left err
+                                        Right pi1T -> case typeCheckPi pi2 of
+                                                        Left err -> Left err
+                                                        Right pi2T -> Right TEncryption														
 typeCheckPi x = Left ("Type failure: " ++ (show x))
 
 
@@ -147,7 +153,18 @@ typeCheckPiProcess (Chain procs) = let types = map typeCheckPiProcess procs in
                                          errs -> Left ("The following errors were found in Chain:\n\t" ++ (join (map (\a -> (show a) ++ "\n\t") errs)))
 typeCheckPiProcess (Value val)   = Right TValue 
 typeCheckPiProcess (OrderedOutput _ from to pi piproc)   = typeCheckPiProcess (Output (Name ("C_" ++ from ++ to)) pi piproc)
-                                    
+typeCheckPiProcess (CaseDecrypt encrytped var key piproc) = case typeCheckPi encrytped of
+                                                         (Right TEncryption) -> case typeCheckPi var of
+                                                                                (Right TVar) -> case typeCheckPi key of
+                                                                                                    (Right keyT) -> case typeCheckPiProcess piproc of
+																									                     (Right piprocT) -> Right (TCaseDecryption piprocT)
+																									                     (Left err ) -> Left err
+                                                                                                    (Left err) -> Left ("TYPE ERROR in CaseDecrypt key: " ++ err)
+                                                                                (Right otherT) -> Left ("TYPE ERROR. Expected Var type in CaseDecrypt but found: " ++ (show otherT))
+                                                                                (Left err) -> Left err
+                                                         (Right other) -> Left ("TYPE ERROR. Expected TEncryption type in CaseDecrypt but found: " ++ (show other))
+                                                         (Left err)    -> Left err
+																																													
 acceptablePi :: PiType -> PiType -> Bool
 acceptablePi (TPair _ _) type2 = case type2 of
                                   (TPair _ _) -> True
@@ -195,11 +212,13 @@ typeandReduce piproc = case typeCheckPiProcess piproc of
                             
 
 runReduceShow term= do
+					putStrLn "BEGINNING REDUCTION"                    
 					x <- runReduce term
+					putStrLn "RESULT:"
 					print (fst x)
 					s <- readTVarIO (snd (snd x))
 					let gamma = fst(snd x)
-					putStrLn ("Gamma: " ++ (show gamma))
+					--putStrLn ("Gamma: " ++ (show gamma))
 					print "END"
 runReduce :: PiProcess -> IO (PiProcess, (Gamma,GlobalChannels))
 runReduce piProc =  do 
@@ -236,7 +255,8 @@ findMVar ::  Pi -> [(Pi,MVar Pi)] -> Maybe (MVar Pi)
 findMVar pi1 [] = Nothing
 findMVar pi1 (x:xs) = if pi1 == (fst x) then Just (snd x)
                                          else findMVar pi1 xs
- 
+
+printer = newMVar (1 :: Int)
 reduce :: PiProcess ->  MyStateT PiProcess
 reduce (Composition proc1 proc2)  = do
                                       m1 <- liftIO newEmptyMVar
@@ -245,12 +265,18 @@ reduce (Composition proc1 proc2)  = do
 																--print "efe"
 																p1 <- return (reduce proc1)
 																putMVar m1 p1
-																print "Done 1"))
+																
+																--print "Done 1"
+																))
                                       tid2 <- liftIO ( forkIO (do
 																--print "efe"
 																p2 <- return (reduce proc2)
 																putMVar m2 p2
-																print "Done 2"))
+																--myPrinter <- printer
+																--takeMVar myPrinter
+																--putStrLn "Done 2"
+																--putMVar myPrinter 1
+																))
                                       p1res <- liftIO $ takeMVar m1
                                       p2res <- liftIO $ takeMVar m2
                                       pi1res2 <- p1res
@@ -330,7 +356,16 @@ reduce Nil  = return Nil
 reduce (Value pi') = do
                      pi <- subIfVar pi'
                      return (Value pi)
-					 
+reduce (CaseDecrypt encrypted' var key' piproc) = do
+													encrypted <- subIfVar encrypted'
+													key <- subIfVar key'
+													case encrypted of
+														(Encryption mess keyin) -> if keyin == key then do
+																										s <- get
+																										put ((VarBind (var, mess)):(fst s),snd s) -- update the state to have this variable
+																										reduce piproc
+																								   else return Stuck
+														(_) -> return Stuck
 subIfVar :: Pi -> MyStateT Pi
 subIfVar pi = do
                s <- get
@@ -349,26 +384,38 @@ myLookup pi (t:xs) = case t of
 						  
 						  
 						  
-testPiGood = Pair (Succ (Succ (Succ Zero))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
-testPi1Good = Pair (Succ (Succ (Succ (Var "varhere1")))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
-testPi2Bad = Pair (Succ (Succ (Succ (Name "name")))) (Pair (Name "namehere") (Pair Zero (Name "varhere")))						  
+examplePiVALID = Pair (Succ (Succ (Succ Zero))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
+examplePiVALIDSuccVar = Pair (Succ (Succ (Succ (Var "varhere1")))) (Pair (Name "namehere") (Pair Zero (Var "varhere"))) --demonstrates succ (Variable) is valid.
+examplePiINVALIDSucc = Pair (Succ (Succ (Succ (Name "name")))) (Pair (Name "namehere") (Pair Zero (Name "varhere")))	  -- demonstrates succ (non-number , non-variable) invalid
 
-badpieProc = Output Zero Zero Nil   --tries to output a channel that is NOT a name.            
-example1PiProcess = Output (Name "channel") (Name "message") Nil
-example2PiProcess = Input (Name "channel") (Name "message") Nil
-example3CompositionPiProcess = Composition example1PiProcess example2PiProcess                                                                                                                                                                                       
--- Pi example 2.3.1
-a_m = Output (Name "C_ab") Zero Nil --A(M) sends zero on channel AB
-b   = Chain [(Input (Name "C_ab") (Var "x") Nil), Restriction (Var "x") Nil]
-inst_m = Restriction (Name "C_ab") (Composition a_m b)
-test = Restriction (Var "varname") (Restriction (Var "varname2") Nil) 
-badchain = Chain [ badpieProc, a_m, a_m,badpieProc, b]						  
+
+piprocINVALIDOutoutToNonChan = Output Zero Zero Nil   --tries to output a channel that is NOT a name.            
+piprocVALIDOutput            = Output (Name "channel") (Name "message") Nil
+piprocVALIDInput             = Input (Name "channel") (Name "message") Nil
+piprocVALIDComposition = Composition piprocVALIDOutput piprocVALIDInput
+piprocINVALIDChain = Chain [ piprocINVALIDOutoutToNonChan, a_m231, a_m231,piprocINVALIDOutoutToNonChan, b231]
+piprocVALIDRestriction = Restriction (Var "varname") (Restriction (Var "varname2") Nil)
+piprocVALIDCase = Case Zero (Succ Zero) (Value (Name "Shouldn't get here")) Zero (Value (Name "Should get here"))  --demonstrates proper Case reducing
+piprocVALIDCaseWVariable = Case Zero (Var "variablename") (Value (Name "Shouldn't get here")) Zero (Value (Name "Should get here"))
+piprocINVALIDCaseNonNumber = Case (Name "num should be here or Var") Zero (Value (Name "Shouldn't get here")) (Succ Zero) (Value (Name "Shouldn't get here")) 
+piprocINVALIDCaseStuck = Case Zero (Succ Zero) (Value (Name "Shouldn't get here")) (Succ Zero) (Value (Name "Shouldn't get here")) 
+                                                                                                                                                                                       
+-- PiProc example 2.3.1
+a_m231 = Output (Name "C_ab") Zero Nil --A(M) sends zero on channel AB
+b231   = Input (Name "C_ab") (Var "x") (Restriction (Var "x") Nil)
+inst_m231 = Restriction (Name "C_ab") (Composition a_m231 b231)
+
+a_m231BADChan = Output (Name "C_az") Zero Nil --A(M) sends zero on channel AB
+b231BADChan   = Input (Name "C_ab") (Var "x") (Restriction (Var "x") Nil)
+inst_m231BADChan = Restriction (Name "C_ab") (Composition a_m231BADChan b231BADChan)
+ 
+						  
 --page 13 example protocol
 a_m2 = Restriction (Name "C_ab") (Output (Name "C_as") (Name "C_ab") (Output (Name "C_ab") (Name "Message from a to b should be here") Nil))
 s    = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") Nil)
 b2   = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") Nil) --(Input (Var "xb") (Var "messageFromA") Nil)
 inst_m2 = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2 (Composition s b2)))
-
+-- this is same as above page 13 example proto, but shows the value received at the end.
 a_m2'    = Restriction (Name "C_ab") (Output (Name "C_as") (Name "C_ab") (Output (Name "C_ab") (Name "Message from a to b should be here") Nil))
 s'       = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") (Value (Var "x")))
 b2'      = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
