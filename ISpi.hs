@@ -217,12 +217,26 @@ typeandReduce piproc = case typeCheckPiProcess piproc of
 										  print t 
 										  putStrLn ""
 										  runReduceShow piproc
-                            
-runForGamma :: PiProcess ->IO Gamma
-runForGamma piproc = do
-						x <- runReduce piproc
-						let gamma = fst (snd x)
-						return gamma
+data Result = Result {
+						finalpiproc :: PiProcess,
+						gamma       :: Gamma,
+						piproctype  :: PiProcessType
+					  } deriving (Eq, Show)
+					  
+					  
+runForOutput :: PiProcess ->IO (Either String Result )
+runForOutput piproc = do
+                        case typeCheckPiProcess piproc of
+                            Left err -> return (Left ("TYPE ERROR: " ++ err))	              
+                            Right t  -> do
+										  --putStrLn "PASSED TYPE CHECKER."
+										  --putStrLn "TYPE:"
+										  --print t 
+										  --putStrLn ""
+										  --runReduceShow piproc
+							              x <- runReduce piproc
+							              let gamgam = fst (snd x)
+							              return (Right (Result (fst x) gamgam t))
 						
 runReduceShow term= do
 					putStrLn "BEGINNING REDUCTION"                    
