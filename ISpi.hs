@@ -162,6 +162,14 @@ typeCheckPiProcess (CaseDecrypt encrytped var key piproc) = case typeCheckPi enc
                                                                                                     (Left err) -> Left ("TYPE ERROR in CaseDecrypt key: " ++ err)
                                                                                 (Right otherT) -> Left ("TYPE ERROR. Expected Var type in CaseDecrypt but found: " ++ (show otherT))
                                                                                 (Left err) -> Left err
+                                                         (Right TVar) -> case typeCheckPi var of
+                                                                                (Right TVar) -> case typeCheckPi key of
+                                                                                                    (Right keyT) -> case typeCheckPiProcess piproc of
+																									                     (Right piprocT) -> Right (TCaseDecryption piprocT)
+																									                     (Left err ) -> Left err
+                                                                                                    (Left err) -> Left ("TYPE ERROR in CaseDecrypt key: " ++ err)
+                                                                                (Right otherT) -> Left ("TYPE ERROR. Expected Var type in CaseDecrypt but found: " ++ (show otherT))
+                                                                                (Left err) -> Left err
                                                          (Right other) -> Left ("TYPE ERROR. Expected TEncryption type in CaseDecrypt but found: " ++ (show other))
                                                          (Left err)    -> Left err
 																																													
