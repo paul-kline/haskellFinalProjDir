@@ -18,7 +18,7 @@ data Pi = Name String
 	| Zero
 	| Succ Pi
     | Var String 
-	| Encryption Pi Pi deriving (Show, Eq)        
+	| Encryption Pi Pi deriving ( Eq)        
 --Pi types
 data PiType = TName   
             | TPair PiType PiType
@@ -26,6 +26,15 @@ data PiType = TName
             | TVar
             | TZero 
 			| TEncryption deriving (Show, Eq)
+			
+instance Show Pi where
+    show (Name str) = str
+    show (Pair x y) = (show x) ++ " " ++ (show y)
+    show Zero       = "0"
+    show (Succ x)   = "Succ(" ++ (show x) ++ ")"
+    show (Var x)    = "Var " ++ x
+    show (Encryption mess key) = "{" ++ (show mess) ++ "}^" ++ (show key)
+	
 
 --PiProcess       
 data PiProcess = Output Pi Pi PiProcess
@@ -42,8 +51,26 @@ data PiProcess = Output Pi Pi PiProcess
                | Value Pi
 			   | OrderedOutput Int String String Pi PiProcess
 			   | CaseDecrypt Pi Pi Pi PiProcess
-               | Stuck deriving (Show, Eq)
-
+               | Stuck deriving ( Eq)
+instance Show PiProcess where
+	show (Output chan mess nextproc) = (show chan) ++ "<\"" ++ (show mess) ++ "\"> . " ++ (show nextproc)
+	show (Input chan mess nextproc) = (show chan) ++ "(" ++ (show mess) ++ ") . " ++ (show nextproc)
+	show (Composition p1 (Composition p2 p3))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ (show p3) ++ " "
+	show (Composition p1 (Composition p2 (Composition p3 p4)))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)
+	show (Composition p1 (Composition p2 (Composition p3 (Composition p4 p5))))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)  ++ " |\n " ++ (show p5)
+	show (Composition p1 p2)         = "\n " ++ (show p1) ++ " |\n " ++ (show p2)
+	show (Restriction pi piproc)     = "(v" ++ (show pi) ++ ")" ++ (show piproc)
+	show (Replication piproc)        = "!" ++ (show piproc)
+	show (Match pi1 pi2 piproc)      = "[" ++ (show pi1) ++ " is " ++ (show pi2) ++ "] " ++ (show piproc)    --[M is N] P
+	show Nil                         = "Nil "
+	show (Let (pi1,pi2) pi3 piproc)  = "let (" ++ (show pi1) ++ ", " ++ (show pi2) ++ ") = " ++ (show pi3) ++ " in " ++ (show piproc) --let (x; y) = M in P 
+	show (Case x y yproc z zpiproc)         = "case " ++ (show x) ++ " of " ++ (show y) ++ " : " ++ (show yproc) ++ " " ++ (show z) ++ " : " ++ (show z) --case M of 0 : P suc(x) : Q 
+	show (Chain procs)               = join (map show procs)
+	show EmptyChain                  = "EmptyChain"
+	show (Value pi)                  = "Value " ++ (show pi)
+	show (OrderedOutput i f t mess nproc) = "(OrderedOutput " ++ (show i) ++ " " ++ f ++ "-->" ++ t ++ " " ++ (show mess) ++ ") . " ++ (show nproc)
+	show (CaseDecrypt enc var key nproc)  = "case " ++ (show enc) ++ " of " ++ "{" ++ (show var) ++ "}^" ++ (show nproc) ++ " in " ++ (show nproc) --case L of fxgN in P
+	show Stuck                           = "STUCK"
 --PiProcess types
 data PiProcessType = TOutput PiProcessType
                    | TInput PiProcessType
@@ -56,7 +83,9 @@ data PiProcessType = TOutput PiProcessType
                    | TCase 
 				   | TValue
 				   | TCaseDecryption PiProcessType
-                   | TChain [PiProcessType] deriving (Eq, Show)
+                   | TChain [PiProcessType] deriving (Show, Eq)
+				   
+
         
 
 
