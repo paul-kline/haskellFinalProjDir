@@ -386,6 +386,10 @@ subIfVar pi = do
                case myLookup pi gamma of
                     Nothing -> return pi
                     Just val -> return val
+subIfVar' :: Pi -> Gamma -> Pi
+subIfVar' pi gamma = case myLookup pi gamma of
+                      Nothing -> pi
+                      Just val -> val
                     
 myLookup :: Pi -> Gamma -> Maybe Pi
 myLookup pi []     = Nothing
