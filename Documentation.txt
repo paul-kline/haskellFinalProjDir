@@ -26,5 +26,7 @@ Extra Features:
 Documentation Discussion:
       Execution of a protocol written in the Spi calculus has unique challenges from that of a 
       classical deep embedding--mainly that it involves parallel reduction of processes that exhibit
-      communication. 
+      communication. Yet at the same time, processes need to have a non-shared state for themselves.
+      To achieve this ends, the reduction computation is done inside a State Transformer (inner monad IO).
+      The state consists of a tuple,
   
