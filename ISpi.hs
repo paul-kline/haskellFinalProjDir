@@ -17,7 +17,7 @@ data Pi = Name String
 	| Pair Pi Pi
 	| Zero
 	| Succ Pi
-    | Var String 
+	| Var String 
 	| Encryption Pi Pi deriving ( Eq)        
 --Pi types
 data PiType = TName   
@@ -25,7 +25,7 @@ data PiType = TName
             | TSucc
             | TVar
             | TZero 
-			| TEncryption deriving (Show, Eq)
+	    | TEncryption deriving (Show, Eq)
 			
 instance Show Pi where
     show (Name str) = str
@@ -49,8 +49,8 @@ data PiProcess = Output Pi Pi PiProcess
                | Chain [PiProcess]
                | EmptyChain
                | Value Pi
-			   | OrderedOutput Int String String Pi PiProcess
-			   | CaseDecrypt Pi Pi Pi PiProcess
+               | OrderedOutput Int String String Pi PiProcess
+               | CaseDecrypt Pi Pi Pi PiProcess
                | Stuck deriving ( Eq)
 instance Show PiProcess where
 	show (Output chan mess nextproc) = (show chan) ++ "<\"" ++ (show mess) ++ "\"> . " ++ (show nextproc)
@@ -84,12 +84,6 @@ data PiProcessType = TOutput PiProcessType
                    | TValue
                    | TCaseDecryption PiProcessType
                    | TChain [PiProcessType] deriving (Show, Eq)
-				   
-
-        
-
-
-
 
 typeCheckPi :: Pi -> Either String PiType
 typeCheckPi (Name str) = Right TName
@@ -186,22 +180,22 @@ typeCheckPiProcess (CaseDecrypt encrytped var key piproc) = case typeCheckPi enc
                                                          (Right TEncryption) -> case typeCheckPi var of
                                                                                 (Right TVar) -> case typeCheckPi key of
                                                                                                     (Right keyT) -> case typeCheckPiProcess piproc of
-																									                     (Right piprocT) -> Right (TCaseDecryption piprocT)
-																									                     (Left err ) -> Left err
+                                                                                                                      (Right piprocT) -> Right (TCaseDecryption piprocT)
+                                                                                                                      (Left err ) -> Left err
                                                                                                     (Left err) -> Left ("TYPE ERROR in CaseDecrypt key: " ++ err)
                                                                                 (Right otherT) -> Left ("TYPE ERROR. Expected Var type in CaseDecrypt but found: " ++ (show otherT))
                                                                                 (Left err) -> Left err
                                                          (Right TVar) -> case typeCheckPi var of
                                                                                 (Right TVar) -> case typeCheckPi key of
                                                                                                     (Right keyT) -> case typeCheckPiProcess piproc of
-																									                     (Right piprocT) -> Right (TCaseDecryption piprocT)
-																									                     (Left err ) -> Left err
+                                                                                                                      (Right piprocT) -> Right (TCaseDecryption piprocT)
+                                                                                                                      (Left err ) -> Left err
                                                                                                     (Left err) -> Left ("TYPE ERROR in CaseDecrypt key: " ++ err)
                                                                                 (Right otherT) -> Left ("TYPE ERROR. Expected Var type in CaseDecrypt but found: " ++ (show otherT))
                                                                                 (Left err) -> Left err
                                                          (Right other) -> Left ("TYPE ERROR. Expected TEncryption type in CaseDecrypt but found: " ++ (show other))
                                                          (Left err)    -> Left err
-																																													
+
 acceptablePi :: PiType -> PiType -> Bool
 acceptablePi (TPair _ _) type2 = case type2 of
                                   (TPair _ _) -> True
@@ -236,46 +230,46 @@ type MyStateT a = StateT (Gamma, GlobalChannels) IO a
 typeandReduce :: PiProcess -> IO () --Either String PiProcess
 typeandReduce piproc = case typeCheckPiProcess piproc of
                             Left err -> do
-							              putStrLn (("TYPE ERROR: " ++ err));
-										  putStrLn "";
-										  putStrLn "";
-										  return ()
+                              putStrLn (("TYPE ERROR: " ++ err));
+                                          putStrLn "";
+                                          putStrLn "";
+                                          return ()
                             Right t  -> do
-										  putStrLn "PASSED TYPE CHECKER."
-										  putStrLn "TYPE:"
-										  print t 
-										  putStrLn ""
-										  runReduceShow piproc
+                              putStrLn "PASSED TYPE CHECKER."
+                              putStrLn "TYPE:"
+                              print t 
+                              putStrLn ""
+                              runReduceShow piproc
 data Result = Result {
-						finalpiproc :: PiProcess,
-						gamma       :: Gamma,
-						piproctype  :: PiProcessType
-					  } deriving (Eq, Show)
-					  
-					  
+                       finalpiproc :: PiProcess,
+                       gamma       :: Gamma,
+                       piproctype  :: PiProcessType
+                     } deriving (Eq, Show)
+
+
 runForOutput :: PiProcess ->IO (Either String Result )
 runForOutput piproc = do
                         case typeCheckPiProcess piproc of
                             Left err -> return (Left ("TYPE ERROR: " ++ err))	              
                             Right t  -> do
-										  --putStrLn "PASSED TYPE CHECKER."
-										  --putStrLn "TYPE:"
-										  --print t 
-										  --putStrLn ""
-										  --runReduceShow piproc
-							              x <- runReduce piproc
-							              let gamgam = fst (snd x)
-							              return (Right (Result (fst x) gamgam t))
-						
+                                            --putStrLn "PASSED TYPE CHECKER."
+                                            --putStrLn "TYPE:"
+                                            --print t 
+                                            --putStrLn ""
+                                            --runReduceShow piproc
+                                x <- runReduce piproc
+                                let gamgam = fst (snd x)
+                                return (Right (Result (fst x) gamgam t))
+                      
 runReduceShow term= do
-					putStrLn "BEGINNING REDUCTION"                    
-					x <- runReduce term
-					putStrLn "RESULT:"
-					print (fst x)
-					s <- readTVarIO (snd (snd x))
-					let gamma = fst(snd x)
-					putStrLn ("Gamma: " ++ (show gamma))
-					print "END"
+                      putStrLn "BEGINNING REDUCTION"                    
+                      x <- runReduce term
+                      putStrLn "RESULT:"
+                      print (fst x)
+                      s <- readTVarIO (snd (snd x))
+                      let gamma = fst(snd x)
+                      putStrLn ("Gamma: " ++ (show gamma))
+                      print "END"
 runReduce :: PiProcess -> IO (PiProcess, (Gamma,GlobalChannels))
 runReduce piProc =  do 
                      emtyTVar <-newTVarIO []
@@ -291,10 +285,10 @@ addMessage' pi1 pi2 [] = do
                            return [(pi1,mvar)]
 addMessage' pi1 pi2 (x:xs) = if pi1 == (fst x) then
                                  do
-									maybeTake <- tryTakeMVar (snd x) -- this takes the value if there was one. We throw this away. 
-									--takeMVar (snd x)
-									putMVar (snd x) pi2
-									return (x:xs)
+                                    maybeTake <- tryTakeMVar (snd x) -- this takes the value if there was one. We throw this away. 
+                                    --takeMVar (snd x)
+                                    putMVar (snd x) pi2
+                                    return (x:xs)
                              else
                                  do
                                     r <- addMessage' pi1 pi2 xs
@@ -318,21 +312,20 @@ reduce (Composition proc1 proc2)  = do
                                       m1 <- liftIO newEmptyMVar
                                       m2 <- liftIO newEmptyMVar
                                       tid <- liftIO ( forkIO (do
-																--print "efe"
-																p1 <- return (reduce proc1)
-																putMVar m1 p1
-																
-																--print "Done 1"
-																))
+                                          --print "efe"
+                                          p1 <- return (reduce proc1)
+                                          putMVar m1 p1
+                                          --print "Done 1"
+                                          ))
                                       tid2 <- liftIO ( forkIO (do
-																--print "efe"
-																p2 <- return (reduce proc2)
-																putMVar m2 p2
-																--myPrinter <- printer
-																--takeMVar myPrinter
-																--putStrLn "Done 2"
-																--putMVar myPrinter 1
-																))
+                                          --print "efe"
+                                          p2 <- return (reduce proc2)
+                                          putMVar m2 p2
+                                          --myPrinter <- printer
+                                          --takeMVar myPrinter
+                                          --putStrLn "Done 2"
+                                          --putMVar myPrinter 1
+                                          ))
                                       p1res <- liftIO $ takeMVar m1
                                       p2res <- liftIO $ takeMVar m2
                                       pi1res2 <- p1res
@@ -354,23 +347,23 @@ reduce (Input pi1' pi2 piproc)   = do
                               let tvarList = snd s
                               tvarListUnwrapped <-liftIO $ readTVarIO tvarList
                               case findMVar pi1 tvarListUnwrapped of
-                                   Nothing -> do
-												liftIO (putStrLn "I didn't find that mvar so now I have to create one.")
-												mvar <- liftIO $ newEmptyMVar -- pi2
-												let pair = (pi1,mvar)
-												liftIO $ atomically $ (modifyTVar tvarList (\list -> pair : list))
-                                   Just v  -> do
-												liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to state"))												
+                                  Nothing -> do
+                                     liftIO (putStrLn "I didn't find that mvar so now I have to create one.")
+                                     mvar <- liftIO $ newEmptyMVar -- pi2
+                                     let pair = (pi1,mvar)
+                                     liftIO $ atomically $ (modifyTVar tvarList (\list -> pair : list))
+                                  Just v  -> do
+                                     liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to state"))												
                               tvarListUnwrapped' <-liftIO $ readTVarIO tvarList --do I need to do this again?
                               case findMVar pi1 tvarListUnwrapped' of
-								Just mvar -> do
-												val <-liftIO $ takeMVar mvar -- we block until we get a message
-												s <- get
-												put ((VarBind (pi2, val)):(fst s),snd s) -- update the state to have this variable
-												liftIO $ putMVar mvar val -- put the value back because anyone can read the channel multiple times. hopefully this doesn't break outputing to that channel a second time. 
-												--piproc' <- substituteAllInstancesOf pi2 val piproc
-												reduce piproc -- finally do the next process.
-								Nothing -> return Stuck -- this should not possibly happen. We either block, or put a new mvar in the state to block on.                              
+                                                                Just mvar -> do
+                                                                  val <-liftIO $ takeMVar mvar -- we block until we get a message
+                                                                  s <- get
+                                                                  put ((VarBind (pi2, val)):(fst s),snd s) -- update the state to have this variable
+                                                                  liftIO $ putMVar mvar val -- put the value back because anyone can read the channel multiple times. hopefully this doesn't break outputing to that channel a second time. 
+                                                                  --piproc' <- substituteAllInstancesOf pi2 val piproc
+                                                                  reduce piproc -- finally do the next process.
+                                                                Nothing -> return Stuck -- this should not possibly happen. We either block, or put a new mvar in the state to block on.                              
 reduce (Restriction pi1 piproc)  = do
                               s <- get                        
                               let s' =  ( (Restricted pi1 : (fst s)), snd s)            
@@ -413,15 +406,15 @@ reduce (Value pi') = do
                      pi <- subIfVar pi'
                      return (Value pi)
 reduce (CaseDecrypt encrypted' var key' piproc) = do
-													encrypted <- subIfVar encrypted'
-													key <- subIfVar key'
-													case encrypted of
-														(Encryption mess keyin) -> if keyin == key then do
-																										s <- get
-																										put ((VarBind (var, mess)):(fst s),snd s) -- update the state to have this variable
-																										reduce piproc
-																								   else return Stuck
-														(_) -> return Stuck
+                                                   encrypted <- subIfVar encrypted'
+                                                   key <- subIfVar key'
+                                                   case encrypted of
+                                                    (Encryption mess keyin) -> if keyin == key then do
+                                                        s <- get
+                                                        put ((VarBind (var, mess)):(fst s),snd s) -- update the state to have this variable
+                                                        reduce piproc
+                                                         else return Stuck
+                                                    (_) -> return Stuck
 subIfVar :: Pi -> MyStateT Pi
 subIfVar pi = do
                s <- get
@@ -439,15 +432,10 @@ myLookup pi []     = Nothing
 myLookup pi (t:xs) = case t of
                           VarBind (x,y) -> if x == pi then return y else myLookup pi xs 
                           _ -> myLookup pi xs
-
-
-						  
-						  
-						  
+	  
 examplePiVALID = Pair (Succ (Succ (Succ Zero))) (Pair (Name "namehere") (Pair Zero (Var "varhere")))
 examplePiVALIDSuccVar = Pair (Succ (Succ (Succ (Var "varhere1")))) (Pair (Name "namehere") (Pair Zero (Var "varhere"))) --demonstrates succ (Variable) is valid.
 examplePiINVALIDSucc = Pair (Succ (Succ (Succ (Name "name")))) (Pair (Name "namehere") (Pair Zero (Name "varhere")))	  -- demonstrates succ (non-number , non-variable) invalid
-
 
 piprocINVALIDOutoutToNonChan = Output Zero Zero Nil   --tries to output a channel that is NOT a name.            
 piprocVALIDOutput            = Output (Name "channel") (Name "message") Nil
