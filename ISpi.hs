@@ -14,19 +14,19 @@ import System.IO.Unsafe
 
 --Pi
 data Pi = Name String
-	| Pair Pi Pi
-	| Zero
-	| Succ Pi
-	| Var String 
-	| Encryption Pi Pi deriving ( Eq)        
+        | Pair Pi Pi
+        | Zero
+        | Succ Pi
+        | Var String 
+        | Encryption Pi Pi deriving ( Eq)        
 --Pi types
 data PiType = TName   
             | TPair PiType PiType
             | TSucc
             | TVar
             | TZero 
-	    | TEncryption deriving (Show, Eq)
-			
+            | TEncryption deriving (Show, Eq)
+
 instance Show Pi where
     show (Name str) = str
     show (Pair x y) = (show x) ++ " " ++ (show y)
@@ -53,24 +53,24 @@ data PiProcess = Output Pi Pi PiProcess
                | CaseDecrypt Pi Pi Pi PiProcess
                | Stuck deriving ( Eq)
 instance Show PiProcess where
-	show (Output chan mess nextproc) = (show chan) ++ "<\"" ++ (show mess) ++ "\"> . " ++ (show nextproc)
-	show (Input chan mess nextproc) = (show chan) ++ "(" ++ (show mess) ++ ") . " ++ (show nextproc)
-	show (Composition p1 (Composition p2 (Composition p3 (Composition p4 p5))))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)  ++ " |\n " ++ (show p5)
-	show (Composition p1 (Composition p2 (Composition p3 p4)))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)
-	show (Composition p1 (Composition p2 p3))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " "
-	show (Composition p1 p2)         = "\n " ++ (show p1) ++ " |\n " ++ (show p2)
-	show (Restriction pi piproc)     = "(v" ++ (show pi) ++ ")" ++ (show piproc)
-	show (Replication piproc)        = "!" ++ (show piproc)
-	show (Match pi1 pi2 piproc)      = "[" ++ (show pi1) ++ " is " ++ (show pi2) ++ "] " ++ (show piproc)    --[M is N] P
-	show Nil                         = "Nil "
-	show (Let (pi1,pi2) pi3 piproc)  = "let (" ++ (show pi1) ++ ", " ++ (show pi2) ++ ") = " ++ (show pi3) ++ " in " ++ (show piproc) --let (x; y) = M in P 
-	show (Case x y yproc z zpiproc)         = "case " ++ (show x) ++ " of " ++ (show y) ++ " : " ++ (show yproc) ++ " " ++ (show z) ++ " : " ++ (show z) --case M of 0 : P suc(x) : Q 
-	show (Chain procs)               = join (map show procs)
-	show EmptyChain                  = "EmptyChain"
-	show (Value pi)                  = "Value " ++ (show pi)
-	show (OrderedOutput i f t mess nproc) = "(OrderedOutput " ++ (show i) ++ " " ++ f ++ "-->" ++ t ++ " " ++ (show mess) ++ ") . " ++ (show nproc)
-	show (CaseDecrypt enc var key nproc)  = "case " ++ (show enc) ++ " of " ++ "{" ++ (show var) ++ "}^" ++ (show nproc) ++ " in " ++ (show nproc) --case L of fxgN in P
-	show Stuck                           = "STUCK"
+        show (Output chan mess nextproc) = (show chan) ++ "<\"" ++ (show mess) ++ "\"> . " ++ (show nextproc)
+        show (Input chan mess nextproc)  = (show chan) ++ "(" ++ (show mess) ++ ") . " ++ (show nextproc)
+        show (Composition p1 (Composition p2 (Composition p3 (Composition p4 p5))))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)  ++ " |\n " ++ (show p5)
+        show (Composition p1 (Composition p2 (Composition p3 p4)))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)
+        show (Composition p1 (Composition p2 p3))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " "
+        show (Composition p1 p2)         = "\n " ++ (show p1) ++ " |\n " ++ (show p2)
+        show (Restriction pi piproc)     = "(v" ++ (show pi) ++ ")" ++ (show piproc)
+        show (Replication piproc)        = "!" ++ (show piproc)
+        show (Match pi1 pi2 piproc)      = "[" ++ (show pi1) ++ " is " ++ (show pi2) ++ "] " ++ (show piproc)    --[M is N] P
+        show Nil                         = "Nil "
+        show (Let (pi1,pi2) pi3 piproc)  = "let (" ++ (show pi1) ++ ", " ++ (show pi2) ++ ") = " ++ (show pi3) ++ " in " ++ (show piproc) --let (x; y) = M in P 
+        show (Case x y yproc z zpiproc)         = "case " ++ (show x) ++ " of " ++ (show y) ++ " : " ++ (show yproc) ++ " " ++ (show z) ++ " : " ++ (show z) --case M of 0 : P suc(x) : Q 
+        show (Chain procs)               = join (map show procs)
+        show EmptyChain                  = "EmptyChain"
+        show (Value pi)                  = "Value " ++ (show pi)
+        show (OrderedOutput i f t mess nproc) = "(OrderedOutput " ++ (show i) ++ " " ++ f ++ "-->" ++ t ++ " " ++ (show mess) ++ ") . " ++ (show nproc)
+        show (CaseDecrypt enc var key nproc)  = "case " ++ (show enc) ++ " of " ++ "{" ++ (show var) ++ "}^" ++ (show nproc) ++ " in " ++ (show nproc) --case L of fxgN in P
+        show Stuck                           = "STUCK"
 --PiProcess types
 data PiProcessType = TOutput PiProcessType
                    | TInput PiProcessType
@@ -114,9 +114,10 @@ typeCheckPiProcess (Input pi1 pi2 piProPrime) = case typeCheckPi pi1 of
       Right tpi1 -> if acceptablePi TName tpi1 then
          case typeCheckPi pi2 of
             Left err   -> Left ("term 'Input' type fail on second pi argument: " ++ err)
-            Right tpi2 -> case typeCheckPiProcess piProPrime of
-               Left err     -> Left ("terpm 'Input' type fail on process subterm: " ++ err)
+            Right TVar -> case typeCheckPiProcess piProPrime of
+               Left err     -> Left ("term 'Input' type fail on process subterm: " ++ err)
                Right primeT -> Right (TInput primeT)
+            Right o    -> Left ("TYPE ERROR. Expected Var type for input, instead found: " ++ (show o))
       else Left ("Input on non-channel. Expected TName for channel. Actual type: " ++ (show tpi1))
 typeCheckPiProcess (Output pi1 pi2 piProPrime) = case typeCheckPi pi1 of
       Left err   -> Left ("term 'Output' type fail on first pi argument: " ++ err)
@@ -124,7 +125,7 @@ typeCheckPiProcess (Output pi1 pi2 piProPrime) = case typeCheckPi pi1 of
          case typeCheckPi pi2 of
             Left err   -> Left ("term 'Output' type fail on second pi argument: " ++ err)
             Right tpi2 -> case typeCheckPiProcess piProPrime of
-               Left err     -> Left ("terpm 'Output' type fail on process subterm: " ++ err)
+               Left err     -> Left ("term 'Output' type fail on process subterm: " ++ err)
                Right primeT -> Right (TOutput primeT)
          else Left ("Output on non-channel. Expected TName for channel. Actual type: " ++ (show tpi1))
 typeCheckPiProcess (Composition proc1 proc2) = case typeCheckPiProcess proc1 of

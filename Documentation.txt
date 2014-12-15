@@ -1,0 +1,30 @@
+
+Guarentees of the Pi typechecker:
+ 1. Succ terms can only have subterms that are Succ, Zero, or Variable
+ 
+ 
+Guarentees of the PiProcess typechecker:
+ 1. Input channels are either Name or Var Pi types.
+ 2. Input always store the message in a Var type.
+ 3. Output channels are either Name or Var Pi types.
+ 4. Let Bindings bind to variables, and the right hand sided is a Pair or a variable
+ 5. Case statements compare only numberic Pi types or variables.
+ 6. CaseDecrypt happens on Encrypted Pi type or variable.
+ 7. CaseDecrypt stores the result of decryption in a variable.
+ 
+ 
+ 
+ 
+Extensions:
+  1. 
+ 
+Extra Features: 
+  1. Fancy printing of Pi/PiProcess terms--as similar to specification as plaintext allows.
+  2. Highly descriptive type error messages.
+  3. Integration with Blank Canvas visualization complete with variable replacement.
+  
+Documentation Discussion:
+      Execution of a protocol written in the Spi calculus has unique challenges from that of a 
+      classical deep embedding--mainly that it involves parallel reduction of processes that exhibit
+      communication. 
+  
