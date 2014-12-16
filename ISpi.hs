@@ -29,7 +29,9 @@ data PiType = TName
 
 instance Show Pi where
     show (Name str) = str
-    show (Pair x y) = (show x) ++ " " ++ (show y)
+    show (Pair x (Pair y (Pair z w))) = "{" ++ (show x) ++ ", " ++ (show y) ++ ", " ++ (show z) ++ ", " ++ (show w) ++ "}"
+    show (Pair x (Pair y z)) = "{" ++ (show x) ++ ", " ++ (show y) ++ ", " ++ (show z) ++ "}"
+    show (Pair x y) = "{" ++ (show x) ++ ", " ++ (show y) ++ "}"
     show Zero       = "0"
     show (Succ x)   = "Succ(" ++ (show x) ++ ")"
     show (Var x)    = "Var " ++ x
@@ -176,7 +178,7 @@ typeCheckPiProcess (Chain procs) = let types = map typeCheckPiProcess procs in
                                          []   -> Right (TChain (map (either (const TNil) id) types)) --note this is safe since we have established they are ALL right side
                                          errs -> Left ("The following errors were found in Chain:\n\t" ++ (join (map (\a -> (show a) ++ "\n\t") errs)))
 typeCheckPiProcess (Value val)   = Right TValue 
-typeCheckPiProcess (OrderedOutput _ from to pi piproc)   = typeCheckPiProcess (Output (Name ("C_" ++ from ++ to)) pi piproc)
+typeCheckPiProcess (OrderedOutput _ from to pi piproc)   = typeCheckPiProcess (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)
 typeCheckPiProcess (CaseDecrypt encrytped var key piproc) = case typeCheckPi encrytped of
                                                          (Right TEncryption) -> case typeCheckPi var of
                                                                                 (Right TVar) -> case typeCheckPi key of
@@ -340,7 +342,7 @@ reduce (Output pi1' pi2' piproc)   = do
                               liftIO $ atomically $ do 
                                                       (modifyTVar tvarList (addMessage pi1 pi2))
                               reduce piproc
-reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ from ++ to)) pi piproc)							  
+reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)							  
 reduce (Input pi1' pi2 piproc)   = do
                               pi1 <- subIfVar pi1'     
                               --pi2 is of course a variable.
@@ -469,3 +471,27 @@ a_m2'    = Restriction (Name "C_ab") (Output (Name "C_as") (Name "C_ab") (Output
 s'       = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") (Value (Var "x")))
 b2'      = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
 inst_m2' = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2' (Composition s' b2')))
+
+
+
+--our protocol
+--appraiser
+armored_a = OrderedOutput 1 "a" "b" (Name "InitRequestTOAttester") 
+            (Input (Name "C_ab") (Var "fromAtt1") 
+            (Input (Name "C_ab") (Var "fromAtt2") 
+            (Value (Pair (Var "fromAtt1") (Var "fromAtt2")))))
+--attester
+armored_b = Input (Name "C_ab") (Var "ReqFromApp") 
+            (OrderedOutput 2 "b" "c" (Name "b, AIK") 
+            (Input (Name "C_bc") (Var "CAResponseToAtt") 
+            (OrderedOutput 4 "b" "m" (Name "pleasegiveMeas1") 
+            (Input (Name "C_bm") (Var "measurementFromMeas") 
+            (OrderedOutput 6 "b" "a" (Var "CAResponseToAtt") 
+            (OrderedOutput 7 "b" "a" (Var "measurementFromMeas") (Value (Pair (Var "ReqFromApp") (Pair (Var "CAResponseToAtt") (Var "measurementFromMeas"))))))))))
+armored_c = Input (Name "C_bc") (Var "reqToCA")
+            (OrderedOutput 3 "c" "b" (Name "pretend this is a CA cert") (Value (Var "reqToCA")))
+armored_m = Input (Name "C_bm") (Var "desE")
+            (OrderedOutput 5 "m" "b" (Name "pretend this is evidence") (Value (Var "desE")))
+inst_armored =Restriction (Name "C_bm")
+              (Restriction (Name "C_ab")
+              (Composition armored_a (Composition armored_b (Composition armored_c armored_m))))
