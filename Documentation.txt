@@ -13,7 +13,8 @@ Guarentees of the PiProcess typechecker:
  7. CaseDecrypt stores the result of decryption in a variable.
  
  
- 
+ Fixes:
+     1. Variable substitution recursively searches pairs.
  
 Extensions:
   1. 
@@ -29,4 +30,8 @@ Documentation Discussion:
       communication. Yet at the same time, processes need to have a non-shared state for themselves.
       To achieve this ends, the reduction computation is done inside a State Transformer (inner monad IO).
       The state consists of a tuple,
+      
+      There is a problem with this implementation as written. Let us look at the following example. Say we 
+      have a protocol where 'A' sends a message to 'B' and 'B' sends back 2 or whatever it receives. So say 'A'
+      sends "Hello," then 'B' would send "HelloHello" back to 'A'. We could write this protocol easily enough 
   

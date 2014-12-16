@@ -407,7 +407,12 @@ reduce (Chain procs) = do
 reduce Nil  = return Nil
 reduce (Value pi') = do
                      pi <- subIfVar pi'
-                     return (Value pi)
+                     case pi of
+                          p@(Pair x y) -> do -- I need to recursively lookup variables.
+                                             (Value v1) <- reduce (Value x) 
+                                             (Value v2) <- reduce (Value y)
+                                             return (Value (Pair v1 v2))
+                          notAPair     -> return (Value pi)
 reduce (CaseDecrypt encrypted' var key' piproc) = do
                                                    encrypted <- subIfVar encrypted'
                                                    key <- subIfVar key'
@@ -426,6 +431,7 @@ subIfVar pi = do
                     Nothing -> return pi
                     Just val -> return val
 subIfVar' :: Pi -> Gamma -> Pi
+subIfVar' (Pair x y) gamma = Pair (subIfVar' x gamma) (subIfVar' y gamma)
 subIfVar' pi gamma = case myLookup pi gamma of
                       Nothing -> pi
                       Just val -> val
@@ -482,7 +488,7 @@ armored_a = OrderedOutput 1 "a" "b" (Name "InitRequestTOAttester")
             (Value (Pair (Var "fromAtt1") (Var "fromAtt2")))))
 --attester
 armored_b = Input (Name "C_ab") (Var "ReqFromApp") 
-            (OrderedOutput 2 "b" "c" (Name "b, AIK") 
+            (OrderedOutput 2 "b" "c" (Name "b + AIK") 
             (Input (Name "C_bc") (Var "CAResponseToAtt") 
             (OrderedOutput 4 "b" "m" (Name "pleasegiveMeas1") 
             (Input (Name "C_bm") (Var "measurementFromMeas") 
@@ -495,3 +501,8 @@ armored_m = Input (Name "C_bm") (Var "desE")
 inst_armored =Restriction (Name "C_bm")
               (Restriction (Name "C_ab")
               (Composition armored_a (Composition armored_b (Composition armored_c armored_m))))
+              
+              
+              
+examplewhyBroken_a = Output (Name "C_ab") (Name "Hello") (Input (Name "C_ab") (Var "x") (Value (Var "x")))      
+--examplewhyBroken_b = Input (Name "C_ab") (Var "x") (Output (Name "C_ab") (
