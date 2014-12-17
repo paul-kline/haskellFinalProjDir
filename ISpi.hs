@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 --pi calculus language
 module ISpi where
 
@@ -11,6 +12,7 @@ import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
 import System.IO.Unsafe
 
+import Control.DeepSeq
 
 --Pi
 data Pi = Name String
@@ -53,7 +55,9 @@ data PiProcess = Output Pi Pi PiProcess
                | Value Pi
                | OrderedOutput Int String String Pi PiProcess
                | CaseDecrypt Pi Pi Pi PiProcess
-               | Stuck deriving ( Eq)
+               | Stuck deriving (Eq)
+               
+            
 instance Show PiProcess where
         show (Output chan mess nextproc) = (show chan) ++ "<\"" ++ (show mess) ++ "\"> . " ++ (show nextproc)
         show (Input chan mess nextproc)  = (show chan) ++ "(" ++ (show mess) ++ ") . " ++ (show nextproc)
@@ -226,9 +230,13 @@ data GammaMembers = VarBind (Pi, Pi)
                   | Mess Pi Pi deriving (Show, Eq)
 type Gamma = [GammaMembers]
 type GlobalChannels = (TVar [(Pi,MVar Pi)]) 
-type MyStateT a = StateT (Gamma, GlobalChannels) IO a
+type MyStateT a = StateT (Gamma, GlobalChannels) IO a 
 
-
+instance Show (MyStateT PiProcess) where
+   show (x) = "special: "
+   show x = "feijf"   
+instance NFData (MyStateT PiProcess)
+   
 --mystateT = 
 typeandReduce :: PiProcess -> IO () --Either String PiProcess
 typeandReduce piproc = case typeCheckPiProcess piproc of
@@ -312,55 +320,77 @@ findMVar pi1 (x:xs) = if pi1 == (fst x) then Just (snd x)
 printer = newMVar (1 :: Int)
 reduce :: PiProcess ->  MyStateT PiProcess
 reduce (Composition proc1 proc2)  = do
+                                      s <- get
                                       m1 <- liftIO newEmptyMVar
                                       m2 <- liftIO newEmptyMVar
-                                      tid <- liftIO ( forkIO (do
-                                          --print "efe"
-                                          p1 <- return (reduce proc1)
-                                          putMVar m1 p1
-                                          --print "Done 1"
-                                          ))
-                                      tid2 <- liftIO ( forkIO (do
-                                          --print "efe"
-                                          p2 <- return (reduce proc2)
-                                          putMVar m2 p2
-                                          --myPrinter <- printer
-                                          --takeMVar myPrinter
-                                          --putStrLn "Done 2"
-                                          --putMVar myPrinter 1
-                                          ))
+                                      liftIO ( do forkIO (do
+                                                         print "first fork"
+                                                         p1 <- return (force (reduce proc1))
+                                                         print p1
+                                                         putMVar m1 p1
+                                                         print "Done 1"
+                                                         )
+                                                  forkIO (do
+                                                         print $ "second fork: "
+                                                        
+                                                         --p2 <- return (force (reduce proc2))
+                                                         p2 <-runStateT (reduce proc2) s
+                                                         print ("hhhhhhhhhhhhHHHHHHHHHHHHHH: " ++ (show (fst p2)))
+                                                         putMVar m2 p2
+                                                         --myPrinter <- printer
+                                                         --takeMVar myPrinter
+                                                         --putStrLn "Done 2"
+                                                         --putMVar myPrinter 1
+                                                         )
+                                          )
+--                                       liftIO ( forkIO (do
+--                                           print "second fork"
+--                                           p2 <- return (reduce proc2)
+--                                           putMVar m2 p2
+--                                           --myPrinter <- printer
+--                                           --takeMVar myPrinter
+--                                           --putStrLn "Done 2"
+--                                           --putMVar myPrinter 1
+--                                           ))
                                       p1res <- liftIO $ takeMVar m1
                                       p2res <- liftIO $ takeMVar m2
                                       pi1res2 <- p1res
-                                      pi2res2 <- p2res
+                                      --pi2res2 <- p2res
+                                      pi2res2 <- p1res
                                       return (Composition pi1res2 pi2res2) --(Composition p1res p2res)                            
 reduce (Output pi1' pi2' piproc)   = do
                               pi1 <- subIfVar pi1'
                               pi2 <- subIfVar pi2'
+                              liftIO $ putStrLn ("OUTPUT ON CHAN: " ++ (show pi1))
                               s <- get
                               let tvarList = snd s 
                               liftIO $ atomically $ do 
                                                       (modifyTVar tvarList (addMessage pi1 pi2))
                               reduce piproc
 reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)							  
-reduce (Input pi1' pi2 piproc)   = do
+reduce (Input pi1' pi2 piproc)   = do  
+                              liftIO $ putStrLn ("INPUT ON CHAN: " ++ (show pi1'))
                               pi1 <- subIfVar pi1'     
+                              
                               --pi2 is of course a variable.
                               s <- get
                               let tvarList = snd s
                               tvarListUnwrapped <-liftIO $ readTVarIO tvarList
                               case findMVar pi1 tvarListUnwrapped of
                                   Nothing -> do
-                                     liftIO (putStrLn "I didn't find that mvar so now I have to create one.")
+                                     liftIO (putStrLn ("I didn't find that mvar so now I have to create one. No Mvar associated with: " ++ (show pi1)))
                                      mvar <- liftIO $ newEmptyMVar -- pi2
                                      let pair = (pi1,mvar)
-                                     liftIO $ atomically $ (modifyTVar tvarList (\list -> pair : list))
+                                     liftIO $ atomically $ (modifyTVar tvarList (\list -> pair : list))                                     
                                   Just v  -> do
                                      liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to state"))												
-                              tvarListUnwrapped' <-liftIO $ readTVarIO tvarList --do I need to do this again?
+                              tvarListUnwrapped' <-liftIO $ readTVarIO tvarList --do I need to do this again?                              
                               case findMVar pi1 tvarListUnwrapped' of
-                                                                Just mvar -> do
-                                                                  val <-liftIO $ takeMVar mvar -- we block until we get a message
+                                                                Just mvar -> do       
+                                                                  liftIO yield
+                                                                  liftIO (print "made it here")
+                                                                  val <-liftIO $ takeMVar mvar -- we block until we get a message  
+                                                                  liftIO $ print "I never get to happen   EITHER" 
                                                                   s <- get
                                                                   put ((VarBind (pi2, val)):(fst s),snd s) -- update the state to have this variable
                                                                   liftIO $ putMVar mvar val -- put the value back because anyone can read the channel multiple times. hopefully this doesn't break outputing to that channel a second time. 
@@ -431,7 +461,7 @@ subIfVar pi = do
                     Nothing -> return pi
                     Just val -> return val
 subIfVar' :: Pi -> Gamma -> Pi
-subIfVar' (Pair x y) gamma = Pair (subIfVar' x gamma) (subIfVar' y gamma)
+subIfVar' (Pair x y) gamma = Pair (subIfVar' x gamma) (subIfVar' y gamma) --added this. def needed.
 subIfVar' pi gamma = case myLookup pi gamma of
                       Nothing -> pi
                       Just val -> val
@@ -504,5 +534,23 @@ inst_armored =Restriction (Name "C_bm")
               
               
               
-examplewhyBroken_a = Output (Name "C_ab") (Name "Hello") (Input (Name "C_ab") (Var "x") (Value (Var "x")))      
---examplewhyBroken_b = Input (Name "C_ab") (Var "x") (Output (Name "C_ab") (
+examplewhyBroken_a = Output (Name "C_ab") (Name "Hello") 
+                    (Input (Name "C_ab") (Var "x") (Value (Var "x"))) 
+                    
+examplewhyBroken_b = Input (Name "C_ab") (Var "x") 
+                    (Output (Name "C_ab") (Pair (Var "x") (Var "x")) 
+                     Nil)
+inst_broken = Restriction (Name "C_ab") (Composition examplewhyBroken_a examplewhyBroken_b)
+
+examplewhyBroken_a' = Output (Name "C_ab") (Name "Hello") 
+                    (Input (Name "C_ba") (Var "x") 
+                    (Input (Name "C_ba") (Var "y")
+                    (Value (Pair (Var "x") (Var "y"))))) 
+                    
+examplewhyBroken_b' = Input (Name "C_ab") (Var "x") 
+                    (Output (Name "C_ba") (Pair (Var "x") (Var "x"))
+                    (Output (Name "C_ba") (Name "Have a nice day Mr. A!")
+                     Nil))
+inst_broken' = Restriction (Name "C_ab") (Composition examplewhyBroken_a' examplewhyBroken_b')
+
+

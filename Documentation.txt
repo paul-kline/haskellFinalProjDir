@@ -33,5 +33,40 @@ Documentation Discussion:
       
       There is a problem with this implementation as written. Let us look at the following example. Say we 
       have a protocol where 'A' sends a message to 'B' and 'B' sends back 2 or whatever it receives. So say 'A'
-      sends "Hello," then 'B' would send "HelloHello" back to 'A'. We could write this protocol easily enough 
-  
+      sends "Hello," then 'B' would send "HelloHello" back to 'A'. We could write this protocol easily enough:
+      
+      examplewhyBroken_a = Output (Name "C_ab") (Name "Hello") 
+                          (Input (Name "C_ab") (Var "x") (Value (Var "x")))  
+                          
+      examplewhyBroken_b = Input (Name "C_ab") (Var "x") 
+                          (Output (Name "C_ab") (Pair (Var "x") (Var "x")) 
+                           Nil)
+      inst_broken = Restriction (Name "C_ab") (Composition examplewhyBroken_a examplewhyBroken_b)
+      
+      When we run this protocol, it will not behave as expected. 'A' and 'B' are running in parallel. 'A' sends
+      "Hello" on the channel. But 'B' never gets a chance to be heard! 'A', after sending "Hello" is instantly waiting
+      for something to be on that channel. And by golly, there is (it's what 'A' just put there!). So 'A' "hears itself"
+      on channel "C_ab" instead of hearing B's response.
+      
+      There are a couple different ways we could fix this. The first way that came to my mind was if we just make sure to
+      only use channels unidirectionally instead of bidirectionally. In a way this 'solves the issue,' but at what cost? We are no longer 
+      true to the Spi Calculus. Clearly 'A' and 'B' communicate bidirectionally on the same channel as seen in many-a-protocol.
+      Well then perhaps we could use unidirectional channels underneath. This would require a sort of self awareness--somehow we would 
+      have to know that I am 'A' sending a message or 'B' sending a message (how else would you know what unidirectional channel to use?).
+      If we do not want to use unidirectional channels underneath, we could use the same idea to instead make sure you don't read a message from
+      a channel that you put there yourself. In the example above, 'A' wouldn't read in the message "Hello" becasue 'A' was the one who put it there.
+      Instead it would wait for a message from someone else. Either approach (unidirectional channels underneath or not reading your messages) does
+      not completely solve the issue. What if we modify the example above so that B sends another message "Have a nice day Mr. A!" :
+      
+      examplewhyBroken_a' = Output (Name "C_ab") (Name "Hello") 
+                    (Input (Name "C_ba") (Var "x") 
+                    (Input (Name "C_ba") (Var "y")
+                    (Value (Pair (Var "x") (Var "y"))))) 
+                    
+      examplewhyBroken_b' = Input (Name "C_ab") (Var "x") 
+                    (Output (Name "C_ba") (Pair (Var "x") (Var "x"))
+                    (Output (Name "C_ba") (Name "Have a nice day Mr. A!")
+                     Nil))
+      inst_broken' = Restriction (Name "C_ab") (Composition examplewhyBroken_a' examplewhyBroken_b')
+      
+      Notice that now 'A' has 2 inputs and 'B' has 2 outputs. 
