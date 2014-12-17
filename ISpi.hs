@@ -9,234 +9,26 @@ import Control.Monad.Identity
 import Control.Concurrent.MVar
 import Control.Concurrent
 import Control.Concurrent.STM
-import Control.Concurrent.STM.TVar
+import Control.Concurrent.STM.TMVar
 import System.IO.Unsafe
 
+import Data.List
+import qualified GHC.Conc as C
 import Control.DeepSeq
 
---Pi
-data Pi = Name String
-        | Pair Pi Pi
-        | Zero
-        | Succ Pi
-        | Var String 
-        | Encryption Pi Pi deriving ( Eq)        
---Pi types
-data PiType = TName   
-            | TPair PiType PiType
-            | TSucc
-            | TVar
-            | TZero 
-            | TEncryption deriving (Show, Eq)
 
-instance Show Pi where
-    show (Name str) = str
-    show (Pair x (Pair y (Pair z w))) = "{" ++ (show x) ++ ", " ++ (show y) ++ ", " ++ (show z) ++ ", " ++ (show w) ++ "}"
-    show (Pair x (Pair y z)) = "{" ++ (show x) ++ ", " ++ (show y) ++ ", " ++ (show z) ++ "}"
-    show (Pair x y) = "{" ++ (show x) ++ ", " ++ (show y) ++ "}"
-    show Zero       = "0"
-    show (Succ x)   = "Succ(" ++ (show x) ++ ")"
-    show (Var x)    = "Var " ++ x
-    show (Encryption mess key) = "{" ++ (show mess) ++ "}^" ++ (show key)
-	
-
---PiProcess       
-data PiProcess = Output Pi Pi PiProcess
-               | Input Pi (Pi) PiProcess --Input Pi (Var String) PiProcess
-               | Composition PiProcess PiProcess
-               | Restriction (Pi) PiProcess --Restriction (Name String) PiProcess
-               | Replication PiProcess
-               | Match Pi Pi PiProcess
-               | Nil
-               | Let (Pi,Pi) Pi PiProcess
-               | Case Pi Pi PiProcess Pi PiProcess 
-               | Chain [PiProcess]
-               | EmptyChain
-               | Value Pi
-               | OrderedOutput Int String String Pi PiProcess
-               | CaseDecrypt Pi Pi Pi PiProcess
-               | Stuck deriving (Eq)
-               
-            
-instance Show PiProcess where
-        show (Output chan mess nextproc) = (show chan) ++ "<\"" ++ (show mess) ++ "\"> . " ++ (show nextproc)
-        show (Input chan mess nextproc)  = (show chan) ++ "(" ++ (show mess) ++ ") . " ++ (show nextproc)
-        show (Composition p1 (Composition p2 (Composition p3 (Composition p4 p5))))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)  ++ " |\n " ++ (show p5)
-        show (Composition p1 (Composition p2 (Composition p3 p4)))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " |\n " ++ (show p4)
-        show (Composition p1 (Composition p2 p3))         = "\n " ++ (show p1) ++ " |\n " ++ (show p2) ++ " |\n " ++ (show p3) ++ " "
-        show (Composition p1 p2)         = "\n " ++ (show p1) ++ " |\n " ++ (show p2)
-        show (Restriction pi piproc)     = "(v" ++ (show pi) ++ ")" ++ (show piproc)
-        show (Replication piproc)        = "!" ++ (show piproc)
-        show (Match pi1 pi2 piproc)      = "[" ++ (show pi1) ++ " is " ++ (show pi2) ++ "] " ++ (show piproc)    --[M is N] P
-        show Nil                         = "Nil "
-        show (Let (pi1,pi2) pi3 piproc)  = "let (" ++ (show pi1) ++ ", " ++ (show pi2) ++ ") = " ++ (show pi3) ++ " in " ++ (show piproc) --let (x; y) = M in P 
-        show (Case x y yproc z zpiproc)         = "case " ++ (show x) ++ " of " ++ (show y) ++ " : " ++ (show yproc) ++ " " ++ (show z) ++ " : " ++ (show z) --case M of 0 : P suc(x) : Q 
-        show (Chain procs)               = join (map show procs)
-        show EmptyChain                  = "EmptyChain"
-        show (Value pi)                  = "Value " ++ (show pi)
-        show (OrderedOutput i f t mess nproc) = "(OrderedOutput " ++ (show i) ++ " " ++ f ++ "-->" ++ t ++ " " ++ (show mess) ++ ") . " ++ (show nproc)
-        show (CaseDecrypt enc var key nproc)  = "case " ++ (show enc) ++ " of " ++ "{" ++ (show var) ++ "}^" ++ (show nproc) ++ " in " ++ (show nproc) --case L of fxgN in P
-        show Stuck                           = "STUCK"
---PiProcess types
-data PiProcessType = TOutput PiProcessType
-                   | TInput PiProcessType
-                   | TComposition PiProcessType PiProcessType
-                   | TRestriction PiProcessType
-                   | TReplication PiProcessType
-                   | TMatch PiProcessType
-                   | TNil
-                   | TLet PiProcessType
-                   | TCase 
-                   | TValue
-                   | TCaseDecryption PiProcessType
-                   | TChain [PiProcessType] deriving (Show, Eq)
-
-typeCheckPi :: Pi -> Either String PiType
-typeCheckPi (Name str) = Right TName
-typeCheckPi (Pair a b) = case typeCheckPi a of
-                                Left str -> Left ("First of Pair type fail: " ++ str) 
-                                Right fstT -> case typeCheckPi b of
-                                                Left str -> Left ("Second member of Pair type fail: " ++ str)
-                                                Right sndT ->  Right (TPair fstT sndT)                                
-typeCheckPi Zero = Right TZero
-typeCheckPi x@(Succ t) = case typeCheckPi t of
-                              Left str -> Left (str) --no extra error text here to prevent recursive error message. 
-                              Right TZero -> Right TSucc
-                              Right TSucc -> Right TSucc
-                              Right TVar  -> Right TSucc -- variables are okay, but may cause runtime error
-                              Right _ -> Left ("Succ of non-numberic type: " ++ (show x))
-typeCheckPi (Var _) = Right TVar    
-typeCheckPi (Encryption pi1 pi2) =  case typeCheckPi pi1 of
-                                        Left err   -> Left err
-                                        Right pi1T -> case typeCheckPi pi2 of
-                                                        Left err -> Left err
-                                                        Right pi2T -> Right TEncryption														
-typeCheckPi x = Left ("Type failure: " ++ (show x))
-
-
-typeCheckPiProcess :: PiProcess -> Either String PiProcessType
-typeCheckPiProcess (Input pi1 pi2 piProPrime) = case typeCheckPi pi1 of
-      Left err   -> Left ("term 'Input' type fail on first pi argument: " ++ err)
-      Right tpi1 -> if acceptablePi TName tpi1 then
-         case typeCheckPi pi2 of
-            Left err   -> Left ("term 'Input' type fail on second pi argument: " ++ err)
-            Right TVar -> case typeCheckPiProcess piProPrime of
-               Left err     -> Left ("term 'Input' type fail on process subterm: " ++ err)
-               Right primeT -> Right (TInput primeT)
-            Right o    -> Left ("TYPE ERROR. Expected Var type for input, instead found: " ++ (show o))
-      else Left ("Input on non-channel. Expected TName for channel. Actual type: " ++ (show tpi1))
-typeCheckPiProcess (Output pi1 pi2 piProPrime) = case typeCheckPi pi1 of
-      Left err   -> Left ("term 'Output' type fail on first pi argument: " ++ err)
-      Right tpi1 -> if acceptablePi TName tpi1 then
-         case typeCheckPi pi2 of
-            Left err   -> Left ("term 'Output' type fail on second pi argument: " ++ err)
-            Right tpi2 -> case typeCheckPiProcess piProPrime of
-               Left err     -> Left ("term 'Output' type fail on process subterm: " ++ err)
-               Right primeT -> Right (TOutput primeT)
-         else Left ("Output on non-channel. Expected TName for channel. Actual type: " ++ (show tpi1))
-typeCheckPiProcess (Composition proc1 proc2) = case typeCheckPiProcess proc1 of
-      Left err     -> Left ("Type error in term 'Composition', first process: " ++ err)
-      Right proc1T -> case typeCheckPiProcess proc2 of
-         Left err     -> Left ("Type error in term 'Composition', second process: " ++ err)
-         Right proc2T -> Right (TComposition proc1T proc2T)
-typeCheckPiProcess (Restriction pi1 proc) = case typeCheckPi pi1 of
-      Left err   -> Left ("Type error in term 'Restriction' Pi term: " ++ err)
-      Right pi1T -> case typeCheckPiProcess proc of
-         Left err   -> Left ("Type error in term 'Restriction' Process term: " ++ err)
-         Right procT -> Right (TRestriction procT)
-typeCheckPiProcess (Replication proc) = case typeCheckPiProcess proc of
-      Left err -> Left ("Type error in term 'Replication': " ++ err)
-      Right procT -> Right (TReplication procT)
-typeCheckPiProcess (Match pi1 pi2 piProPrime) = case typeCheckPi pi1 of
-      Left err   -> Left ("term 'Match' type fail on first pi argument: " ++ err)
-      Right tpi1 -> case typeCheckPi pi2 of
-         Left err   -> Left ("term 'Match' type fail on second pi argument: " ++ err)
-         Right tpi2 -> case typeCheckPiProcess piProPrime of
-            Left err     -> Left ("term 'Match' type fail on process subterm: " ++ err)
-            Right primeT -> Right (TMatch primeT) 
-typeCheckPiProcess Nil = Right TNil
-typeCheckPiProcess (Let (pi1,pi2) pairPossibly proc) = case typeCheckPi pairPossibly of
-      (Right pairPossiblyT) -> if acceptablePi (TPair TZero TZero) pairPossiblyT then
-                                 case (typeCheckPi pi1, typeCheckPi pi2) of
-                                    (Right TVar, Right TVar) -> case typeCheckPiProcess proc of
-                                                   (Right procT) -> Right (TLet procT)
-                                                   (Left err)    -> Left ("Type error in Let subprocess: " ++ err)
-                                    (tup)                    -> Left ("Type error. Expected 2 variables in let binding. Found: " ++ join (map (either show show) (listify2 tup)) )           
-                                else Left ("Type error. Expected type Tpair in Let binding. Actual type: " ++ (show pairPossiblyT))    
-      (Left err)            -> Left ("Type error in pair value of Let: " ++ err)                                
-typeCheckPiProcess (Case pi0 pi1 piproc1 pi2 piproc2) = if(and (map isOKnumberPi [pi0,pi1,pi2])) 
- then
-  case (typeCheckPi pi0, typeCheckPi pi1, typeCheckPi pi2) of
-      (Right pi0T, Right pi1T, Right pi2T) -> case typeCheckPiProcess piproc1 of
-                                                (Right piproc1T) -> case typeCheckPiProcess piproc2 of
-                                                                     (Right piproc2T) -> Right TCase
-                                                                     (Left err)       -> Left ("Type Error in second process of Case: " ++ err)
-                                                (Left err)       -> Left ("Type Error in first process of Case: " ++ err)
-      triplet                              -> Left ("Error in a pi term of Case statement. Actual types: " ++ join ((map (either show show) (listify3 triplet))))
- else Left ("Type Error. Case of non-numberic types. pi0: " ++ (show pi0) ++ ", " ++ (show pi1) ++ ", " ++ (show pi2))
-typeCheckPiProcess (Chain procs) = let types = map typeCheckPiProcess procs in
-                                    case foldr (\eitherType ansList -> 
-                                                   case eitherType of 
-                                                        l@(Left err) -> l:ansList
-                                                        (Right _) -> ansList) [] types of
-                                         []   -> Right (TChain (map (either (const TNil) id) types)) --note this is safe since we have established they are ALL right side
-                                         errs -> Left ("The following errors were found in Chain:\n\t" ++ (join (map (\a -> (show a) ++ "\n\t") errs)))
-typeCheckPiProcess (Value val)   = Right TValue 
-typeCheckPiProcess (OrderedOutput _ from to pi piproc)   = typeCheckPiProcess (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)
-typeCheckPiProcess (CaseDecrypt encrytped var key piproc) = case typeCheckPi encrytped of
-                                                         (Right TEncryption) -> case typeCheckPi var of
-                                                                                (Right TVar) -> case typeCheckPi key of
-                                                                                                    (Right keyT) -> case typeCheckPiProcess piproc of
-                                                                                                                      (Right piprocT) -> Right (TCaseDecryption piprocT)
-                                                                                                                      (Left err ) -> Left err
-                                                                                                    (Left err) -> Left ("TYPE ERROR in CaseDecrypt key: " ++ err)
-                                                                                (Right otherT) -> Left ("TYPE ERROR. Expected Var type in CaseDecrypt but found: " ++ (show otherT))
-                                                                                (Left err) -> Left err
-                                                         (Right TVar) -> case typeCheckPi var of
-                                                                                (Right TVar) -> case typeCheckPi key of
-                                                                                                    (Right keyT) -> case typeCheckPiProcess piproc of
-                                                                                                                      (Right piprocT) -> Right (TCaseDecryption piprocT)
-                                                                                                                      (Left err ) -> Left err
-                                                                                                    (Left err) -> Left ("TYPE ERROR in CaseDecrypt key: " ++ err)
-                                                                                (Right otherT) -> Left ("TYPE ERROR. Expected Var type in CaseDecrypt but found: " ++ (show otherT))
-                                                                                (Left err) -> Left err
-                                                         (Right other) -> Left ("TYPE ERROR. Expected TEncryption type in CaseDecrypt but found: " ++ (show other))
-                                                         (Left err)    -> Left err
-
-acceptablePi :: PiType -> PiType -> Bool
-acceptablePi (TPair _ _) type2 = case type2 of
-                                  (TPair _ _) -> True
-                                  (TVar)      -> True
-                                  _           -> False
-acceptablePi (TName) type2 = case type2 of
-                                   (TName) -> True
-                                   (TVar)  -> True
-                                   _       -> False
-isOKnumberPi :: Pi -> Bool
-isOKnumberPi Zero   = True
-isOKnumberPi (Succ pi) = if isOKnumberPi pi then True
-                                          else False
-isOKnumberPi (Var _) = True                                          
-isOKnumberPi _       = False                                      
-                     
-listify2 :: (a,a) -> [a]
-listify2 (x,y) = [x,y]
-
-listify3 :: (a,a,a) -> [a]
-listify3 (x,y,z) = [x,y,z]
-
-data GammaMembers = VarBind (Pi, Pi)
-                  | Restricted Pi
-                  | Mess Pi Pi deriving (Show, Eq)
-type Gamma = [GammaMembers]
-type GlobalChannels = (TVar [(Pi,MVar Pi)]) 
-type MyStateT a = StateT (Gamma, GlobalChannels) IO a 
-
-instance Show (MyStateT PiProcess) where
-   show (x) = "special: "
-   show x = "feijf"   
-instance NFData (MyStateT PiProcess)
-   
+printTMVarStuff x = do
+                    str <- printTMVarStuff' x
+                    putStrLn str
+                    
+printTMVarStuff' :: [(Pi,MVar Pi)] -> IO String
+printTMVarStuff' [] = return ""
+printTMVarStuff' (x:xs) = do
+                        content <- takeMVar (snd x)
+                        putMVar (snd x) content
+                        rest <- printTMVarStuff' xs
+                        return ("(" ++ (show (fst x)) ++ ", " ++ (show content) ++ ")\n" ++ rest )
+                        
 --mystateT = 
 typeandReduce :: PiProcess -> IO () --Either String PiProcess
 typeandReduce piproc = case typeCheckPiProcess piproc of
@@ -277,14 +69,14 @@ runReduceShow term= do
                       x <- runReduce term
                       putStrLn "RESULT:"
                       print (fst x)
-                      s <- readTVarIO (snd (snd x))
+                      s <- atomically $ readTMVar (snd (snd x))
                       let gamma = fst(snd x)
                       putStrLn ("Gamma: " ++ (show gamma))
                       print "END"
 runReduce :: PiProcess -> IO (PiProcess, (Gamma,GlobalChannels))
 runReduce piProc =  do 
-                     emtyTVar <-newTVarIO []
-                     x <- (runStateT (reduce piProc)) ([],emtyTVar)
+                     emtyTMVar <-newTMVarIO []
+                     x <- (runStateT (reduce piProc)) ([],emtyTMVar)
                     -- print x
                      return x
 -- 
@@ -324,19 +116,26 @@ reduce (Composition proc1 proc2)  = do
                                       m1 <- liftIO newEmptyMVar
                                       m2 <- liftIO newEmptyMVar
                                       liftIO ( do forkIO (do
-                                                         print "first fork"
-                                                         p1 <- return (force (reduce proc1))
-                                                         print p1
+                                                         --print "~~~~~~~~~~~~~~~"
+                                                         --p1 <- return (force (reduce proc1))
+                                                         p1 <-runStateT (reduce proc1) s
+                                                         --print "#"
+                                                         print (fst p1)
                                                          putMVar m1 p1
-                                                         print "Done 1"
+                                                         
+                                                         --print "Done 1"
                                                          )
                                                   forkIO (do
-                                                         print $ "second fork: "
-                                                        
+                                                         --print $ "second fork: "
+                                                         --print "^^^^^^^^^^^^^"
                                                          --p2 <- return (force (reduce proc2))
+                                                         yield
                                                          p2 <-runStateT (reduce proc2) s
-                                                         print ("hhhhhhhhhhhhHHHHHHHHHHHHHH: " ++ (show (fst p2)))
+                                                         --print (fst p2)
+                                                         --print ("hhhhhhhhhhhhHHHHHHHHHHHHHH: ") -- ++ (show (fst p2)))
+                                                         
                                                          putMVar m2 p2
+                                                         
                                                          --myPrinter <- printer
                                                          --takeMVar myPrinter
                                                          --putStrLn "Done 2"
@@ -354,43 +153,55 @@ reduce (Composition proc1 proc2)  = do
 --                                           ))
                                       p1res <- liftIO $ takeMVar m1
                                       p2res <- liftIO $ takeMVar m2
-                                      pi1res2 <- p1res
+                                      --pi1res2 <- p1res
                                       --pi2res2 <- p2res
-                                      pi2res2 <- p1res
-                                      return (Composition pi1res2 pi2res2) --(Composition p1res p2res)                            
+                                      --pi2res2 <- p1res
+                                      s <- get
+                                      tmvar <- liftIO $ atomically $ readTMVar (snd s)
+                                      liftIO $ print "TMVAR contents"
+                                      liftIO $ printTMVarStuff (tmvar)
+                                      return (Composition (fst p2res) (fst p2res)) --(Composition p1res p2res)                            
 reduce (Output pi1' pi2' piproc)   = do
                               pi1 <- subIfVar pi1'
                               pi2 <- subIfVar pi2'
-                              liftIO $ putStrLn ("OUTPUT ON CHAN: " ++ (show pi1))
+                              liftIO $ putStrLn ("OUTPUT: " ++ (show pi1))
                               s <- get
-                              let tvarList = snd s 
+                              let tmvarList = snd s 
                               liftIO $ atomically $ do 
-                                                      (modifyTVar tvarList (addMessage pi1 pi2))
+                                                      (modifyTVar tmvarList (addMessage pi1 pi2))
                               reduce piproc
 reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)							  
 reduce (Input pi1' pi2 piproc)   = do  
-                              liftIO $ putStrLn ("INPUT ON CHAN: " ++ (show pi1'))
+                              --liftIO $ putStrLn ("INPUT: " ++ (show pi1'))
                               pi1 <- subIfVar pi1'     
                               
                               --pi2 is of course a variable.
                               s <- get
-                              let tvarList = snd s
-                              tvarListUnwrapped <-liftIO $ readTVarIO tvarList
-                              case findMVar pi1 tvarListUnwrapped of
+                              let tmvarList = snd s
+                              tmvarListUnwrapped <-liftIO $ atomically $ readTMVar tmvarList
+                                  
+                              case findMVar pi1 tmvarListUnwrapped of
                                   Nothing -> do
-                                     liftIO (putStrLn ("I didn't find that mvar so now I have to create one. No Mvar associated with: " ++ (show pi1)))
+                                     --liftIO (putStrLn ("I didn't find that mvar so now I have to create one. No Mvar associated with: " ++ (show pi1)))
                                      mvar <- liftIO $ newEmptyMVar -- pi2
-                                     let pair = (pi1,mvar)
-                                     liftIO $ atomically $ (modifyTVar tvarList (\list -> pair : list))                                     
-                                  Just v  -> do
-                                     liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to state"))												
-                              tvarListUnwrapped' <-liftIO $ readTVarIO tvarList --do I need to do this again?                              
-                              case findMVar pi1 tvarListUnwrapped' of
+                                     --let pair = (pi1,mvar)
+                                     liftIO $ atomically $ do
+                                                            --mvar <- newEmptyMVar -- pi2
+                                                            let pair = (pi1,mvar)
+                                                            swapTMVar tmvarList (pair : tmvarListUnwrapped)
+                                                            return ()
+                                                            --(modifyTVar tmvarList (\list -> pair : list))                                     
+                                  Just v  -> do return ()
+                                     --liftIO (putStrLn ("In Input. MVar was found so I can continue without adding an empty mvar to state"))												
+                              tmvarListUnwrapped' <-liftIO $ atomically $ readTMVar tmvarList --do I need to do this again?                              
+                              case findMVar pi1 tmvarListUnwrapped' of
                                                                 Just mvar -> do       
-                                                                  liftIO yield
-                                                                  liftIO (print "made it here")
+                                                                  --liftIO yield
+                                                                  liftIO (myPrint ("$$$$$$$B:" ++ (show pi1)))
+                                                                  --liftIO $ myPrint "&&&&&&&&&&&&&&&7"
                                                                   val <-liftIO $ takeMVar mvar -- we block until we get a message  
-                                                                  liftIO $ print "I never get to happen   EITHER" 
+                                                                 -- liftIO (print ("GGGGGGGGGB:" ++ (show val)))
+                                                                  --liftIO $ print "I never get to happen   EITHER" 
                                                                   s <- get
                                                                   put ((VarBind (pi2, val)):(fst s),snd s) -- update the state to have this variable
                                                                   liftIO $ putMVar mvar val -- put the value back because anyone can read the channel multiple times. hopefully this doesn't break outputing to that channel a second time. 
@@ -508,8 +319,10 @@ s'       = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") (Value 
 b2'      = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
 inst_m2' = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2' (Composition s' b2')))
 
-
-
+myPrint :: String -> IO ()
+myPrint str = do
+                atomically $ C.unsafeIOToSTM (print str)
+                return ()
 --our protocol
 --appraiser
 armored_a = OrderedOutput 1 "a" "b" (Name "InitRequestTOAttester") 
@@ -548,9 +361,16 @@ examplewhyBroken_a' = Output (Name "C_ab") (Name "Hello")
                     (Value (Pair (Var "x") (Var "y"))))) 
                     
 examplewhyBroken_b' = Input (Name "C_ab") (Var "x") 
-                    (Output (Name "C_ba") (Pair (Var "x") (Var "x"))
+                    (Output (Name "C_ba") (Name "poop") --(Pair (Var "x") (Var "x"))
                     (Output (Name "C_ba") (Name "Have a nice day Mr. A!")
                      Nil))
 inst_broken' = Restriction (Name "C_ab") (Composition examplewhyBroken_a' examplewhyBroken_b')
 
 
+examplewhyBroken_af = Output (Name "C_ab") (Name "Hello") 
+                    (Input (Name "C_ab") (Var "x") (Value (Var "x"))) 
+                    
+examplewhyBroken_bf = Input (Name "C_ab") (Var "x") 
+                    (Output (Name "C_ba") ((Var "x")) 
+                     Nil)
+inst_brokenf = Restriction (Name "C_ab") (Composition examplewhyBroken_af examplewhyBroken_bf)
