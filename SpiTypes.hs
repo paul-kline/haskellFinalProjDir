@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards, TypeSynonymInstances, FlexibleInstances #-}
 module SpiTypes where
 
 import Control.Monad

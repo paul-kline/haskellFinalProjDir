@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards  #-}
 module ISpi2 where
 
 import SpiTypeChecker
@@ -9,6 +9,7 @@ import Control.Monad.State.Lazy
 import Control.Monad
 import Control.Concurrent.MVar
 import Control.Concurrent
+import Data.List
 
 runReduce :: PiProcess ->IO (PiProcess, MyState)
 runReduce piproc = do
@@ -45,8 +46,13 @@ reduce (Composition proc1 proc2)  = do
                                                          --takeMVar myPrinter
                                                          --putStrLn "Done 2"
                                                          --putMVar myPrinter 1
+                                     
                                      res1 <- liftIO $ takeMVar mv1
                                      res2 <- liftIO $ takeMVar mv2
+                                     (MyState x y) <- get
+                                     let res1gamma = gamma (snd res1)
+                                     let res2gamma = gamma (snd res2)
+                                     put (MyState (union res1gamma res2gamma) y)
                                      return (Composition (fst res1) (fst res2))
 reduce (Output pi1' pi2' piproc)   = do
                                       pi1 <- subIfVar pi1'
