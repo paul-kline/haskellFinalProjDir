@@ -27,12 +27,11 @@ toMessages (I.Case pi0 pi1 piproc1 pi2 piproc2) messSoFar          = toMessages 
 toMessages (I.Chain procs) messSoFar 					           = join (map (flip toMessages messSoFar) procs)    
 toMessages (I.Value pi) messSoFar                                  = messSoFar                               
 toMessages I.Nil messSoFar                                         = messSoFar  								 
-toMessages (I.CaseDecrypt encrypted storeResVar keylimePi piProcess) = toMessages piProcess messSoFar
-toMessages 		   
+toMessages (I.CaseDecrypt encrypted storeResVar keylimePi piProcess) messSoFar = toMessages piProcess messSoFar
 		   
 toRegularPi :: I.PiProcess -> I.PiProcess
 toRegularPi (I.Composition proc1 proc2)                    = I.Composition (toRegularPi proc1) (toRegularPi proc2)
-toRegularPi (I.OrderedOutput int fromS toS pi2 piproc)     = I.Output (I.Name ("C_" ++ (if fromS < toS then (fromS ++ toS) else (toS ++ fromS)))) pi2 (toRegularPi piproc)  --consitently ALWAYS alphabetical. Important note.
+toRegularPi (I.OrderedOutput int fromS toS pi2 piproc)     = I.Output (I.Name ("C_" ++ (if fromS < toS then (fromS ++ toS) else (toS ++ fromS)))) pi2 (toRegularPi piproc)  --consistently ALWAYS alphabetical. Important note.
 toRegularPi (I.Input pi1 pi2 piproc)                       = I.Input pi1 pi2 (toRegularPi piproc)
 toRegularPi (I.Restriction pi1 piproc)   		           = I.Restriction pi1 (toRegularPi piproc)
 toRegularPi (I.Match pi1 pi2 piproc)                       = I.Match pi1 pi2 (toRegularPi piproc)
