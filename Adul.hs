@@ -1,7 +1,7 @@
 module Adul where --ADam paUL
 
-import qualified ISpi as I 
-import ISpi
+import qualified SpiTypes as I 
+import SpiTypes
 import Control.Monad
 import Control.Monad.State.Lazy
 import Control.Monad.Identity

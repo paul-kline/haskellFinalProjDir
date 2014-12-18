@@ -141,5 +141,4 @@ broadcast_b = Input (Name "C") (Var "x")
 broadcast_c = Input (Name "C") (Var "x") 
                     (Output (Name "C") (Pair (Name "C got:") (Var "x")) --(Pair (Var "x") (Var "x"))
                     Nil )
-inst_broadcast = Composition broadcast_a (Composition broadcast_b broadcast_c)                    
-               
+inst_broadcast = Composition broadcast_a (Composition broadcast_b broadcast_c)
