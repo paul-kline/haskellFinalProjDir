@@ -27,7 +27,8 @@ toMessages (I.Case pi0 pi1 piproc1 pi2 piproc2) messSoFar          = toMessages 
 toMessages (I.Chain procs) messSoFar 					           = join (map (flip toMessages messSoFar) procs)    
 toMessages (I.Value pi) messSoFar                                  = messSoFar                               
 toMessages I.Nil messSoFar                                         = messSoFar  								 
-		   
+toMessages (I.CaseDecrypt encrypted storeResVar keylimePi piProcess) = toMessages piProcess messSoFar
+toMessages 		   
 		   
 toRegularPi :: I.PiProcess -> I.PiProcess
 toRegularPi (I.Composition proc1 proc2)                    = I.Composition (toRegularPi proc1) (toRegularPi proc2)
