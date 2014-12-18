@@ -36,7 +36,7 @@ reduce (Composition proc1 proc2)  = do
                                                          --p1 <- return (force (reduce proc1))
                                                          p1 <-runStateT (reduce proc1) s
                                                          --print "#"
-                                                         --print (fst p1)
+                                                         print (fst p1)
                                                          putMVar mv1 p1
                                                          
                                                   forkIO $ do
@@ -45,7 +45,7 @@ reduce (Composition proc1 proc2)  = do
                                                          --p2 <- return (force (reduce proc2))
                                                          --yield
                                                          p2 <-runStateT (reduce proc2) s
-                                                         --print (fst p2)
+                                                         print (fst p2)
                                                          --print ("hhhhhhhhhhhhHHHHHHHHHHHHHH: ") -- ++ (show (fst p2)))
                                                          
                                                          putMVar mv2 p2
@@ -101,11 +101,13 @@ reduce (Input pi1' pi2 piproc)   = do
                                     (MyState gam tmvarP ls m) <- get
                                     tmvarC <- liftIO $ atomically $ takeTMVar tmvarP
                                   --tmvarC :: [(Pi,MVar Pi)]
+                                    liftIO $ putStrLn ("IN:" ++ (show (Input pi1 pi2 piproc)))
                                     case findMVar pi1 tmvarC of
                                         Nothing -> do
                                                     mvr <-liftIO $ newEmptyMVar
                                                     let tmvarContents' = (pi1,mvr):tmvarC
                                                     liftIO $ atomically $ putTMVar tmvarP tmvarContents'
+                                                    liftIO $ yield
                                         Just mvr -> do
                                                         liftIO $ atomically $ putTMVar tmvarP tmvarC
                                     --whether or not I had to put an emptyMVar there, it's there and TMVAR can be taken
@@ -121,7 +123,8 @@ reduce (Input pi1' pi2 piproc)   = do
                                                         (MyState gam tmvP ls m) <- get
                                                         let gam' = (VarBind (pi2, piMess)):gam
                                                         put (MyState gam' tmvP ls' m)
-                                                        if canBroadcast then liftIO $ putMVar pimvar inputMessage 
+                                                        if canBroadcast then do liftIO $ tryPutMVar pimvar inputMessage
+                                                                                return ()
                                                                         else return ()
                                                         
                                     reduce piproc                 
@@ -183,11 +186,13 @@ waitForFresh mvarP counter = do
                         x@(mess,i) <- liftIO $ takeMVar mvarP
                         (MyState gam glob ls m) <- get
                         if elem i ls then do 
-                                            liftIO $ putMVar mvarP x
+                                            liftIO $ tryPutMVar mvarP x
                                             liftIO yield --a little nudge in the right direction
-                                            if counter> 10000000 then error "looping forever waiting for new message"
-                                                               else waitForFresh mvarP (counter +1)
-                                     else return x 
+                                            if counter> 1000000 then error "looping forever waiting for new message"
+                                                                else waitForFresh mvarP (counter +1)
+                                     else do 
+                                             liftIO $ tryPutMVar mvarP x 
+                                             return x 
 getMessageID :: MyStateTMonad Int
 getMessageID = do
                 (MyState g tvar idLS mvidP) <- get
