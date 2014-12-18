@@ -117,9 +117,10 @@ reduce (Input pi1' pi2 piproc)   = do
                                                         let piMess = fst inputMessage
                                                         (MyState gam tmvP ls m) <- get
                                                         let gam' = (VarBind (pi2, piMess)):gam
-                                                        if canBroadcast then put (MyState gam' tmvP ls' m)
-                                                                          else return ()
-                                                        liftIO $ putMVar pimvar inputMessage
+                                                        put (MyState gam' tmvP ls' m)
+                                                        if canBroadcast then liftIO $ putMVar pimvar inputMessage 
+                                                                        else return ()
+                                                        
                                     reduce piproc                 
 reduce (Restriction pi1 piproc)  = do
                               (MyState g globs ls m) <- get                                                                 
