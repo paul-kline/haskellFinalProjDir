@@ -109,7 +109,7 @@ examplewhyBroken_b = Let ((Var "1"),(Var "2")) (Pair (Name "name1") (Name "name2
                     (Input (Name "C_ab") (Var "x") 
                     (Output (Name "C_ab") (Pair (Var "x") (Var "x")) 
                      Nil))))))
-inst_broken = Restriction (Name "C_ab") (Composition examplewhyBroken_b examplewhyBroken_a)
+inst_broken = Restriction (Name "C_ab") (Composition examplewhyBroken_a examplewhyBroken_b)
 
 examplewhyBroken_a' = Output (Name "C_ab") (Name "Hello") 
                     (Input (Name "C_ba") (Var "x") 

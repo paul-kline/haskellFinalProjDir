@@ -1,20 +1,20 @@
 
-Guarentees of the Pi typechecker:
+Guarantees of the Pi type-checker:
  1. Succ terms can only have subterms that are Succ, Zero, or Variable
  
  
-Guarentees of the PiProcess typechecker:
+Guarantees of the PiProcess typechecker:
  1. Input channels are either Name or Var Pi types.
  2. Input always store the message in a Var type.
  3. Output channels are either Name or Var Pi types.
  4. Let Bindings bind to variables, and the right hand sided is a Pair or a variable
- 5. Case statements compare only numberic Pi types or variables.
+ 5. Case statements compare only numeric Pi types or variables.
  6. CaseDecrypt happens on Encrypted Pi type or variable.
  7. CaseDecrypt stores the result of decryption in a variable.
  
  
  Fixes:
-     1. Variable substitution recursively searches pairs.
+     1. Variable substitution recursively searches pairs for vars.
  
 Extensions:
   1. 
@@ -27,12 +27,12 @@ Extra Features:
 Documentation Discussion:
       Execution of a protocol written in the Spi calculus has unique challenges from that of a 
       classical deep embedding--mainly that it involves parallel reduction of processes that exhibit
-      communication. Yet at the same time, processes need to have a non-shared state for themselves.
+      communication. Yet at the same time, processes need to have a non-shared state for themselves (variable substitution).
       To achieve this ends, the reduction computation is done inside a State Transformer (inner monad IO).
-      The state consists of a tuple,
+      
       
       There is a problem with this implementation as written. Let us look at the following example. Say we 
-      have a protocol where 'A' sends a message to 'B' and 'B' sends back 2 or whatever it receives. So say 'A'
+      have a protocol where 'A' sends a message to 'B' and 'B' sends back 2 of whatever it receives. So say 'A'
       sends "Hello," then 'B' would send "HelloHello" back to 'A'. We could write this protocol easily enough:
       
       examplewhyBroken_a = Output (Name "C_ab") (Name "Hello") 

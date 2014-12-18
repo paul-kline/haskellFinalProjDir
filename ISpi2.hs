@@ -10,10 +10,13 @@ import Control.Monad
 import Control.Concurrent.MVar
 import Control.Concurrent
 import Data.List
+import Data.IORef
 
 canReadOwn = False
 canReReceive= False
 canBroadcast = True
+
+
 
 runReduce :: PiProcess ->IO (PiProcess, MyState)
 runReduce piproc = do
@@ -209,7 +212,8 @@ subIfVar pi = do
                     -- Nothing -> return pi
                     -- Just val -> return val
 subIfVar' :: Pi -> Gamma -> Pi
-subIfVar' (Pair x y) gamma = Pair (subIfVar' x gamma) (subIfVar' y gamma) --added this. def needed.
+subIfVar' (Pair x y) gam = Pair (subIfVar' x gam) (subIfVar' y gam) --added this. def needed.
+subIfVar' (Encryption pi1 pi2) gam = Encryption (subIfVar' pi1 gam) (subIfVar' pi2 gam) -- added this. def needed as well.
 subIfVar' pi gamma = case myLookup pi gamma of
                       Nothing -> pi
                       Just val -> val
