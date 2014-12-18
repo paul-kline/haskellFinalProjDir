@@ -5,7 +5,7 @@ import SpiTypeChecker
 import SpiTypes
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TMVar
-import Control.Monad.State.Lazy
+import Control.Monad.State.Strict
 import Control.Monad
 import Control.Concurrent.MVar
 import Control.Concurrent
@@ -13,7 +13,7 @@ import Data.List
 
 canReadOwn = False
 canReReceive= False
-
+canBroadcast = True
 
 runReduce :: PiProcess ->IO (PiProcess, MyState)
 runReduce piproc = do
@@ -33,7 +33,7 @@ reduce (Composition proc1 proc2)  = do
                                                          --p1 <- return (force (reduce proc1))
                                                          p1 <-runStateT (reduce proc1) s
                                                          --print "#"
-                                                         print (fst p1)
+                                                         --print (fst p1)
                                                          putMVar mv1 p1
                                                          
                                                   forkIO $ do
@@ -42,7 +42,7 @@ reduce (Composition proc1 proc2)  = do
                                                          --p2 <- return (force (reduce proc2))
                                                          --yield
                                                          p2 <-runStateT (reduce proc2) s
-                                                         print (fst p2)
+                                                         --print (fst p2)
                                                          --print ("hhhhhhhhhhhhHHHHHHHHHHHHHH: ") -- ++ (show (fst p2)))
                                                          
                                                          putMVar mv2 p2
@@ -73,6 +73,7 @@ reduce (Output pi1' pi2' piproc)   = do
                                                     if canReadOwn then return ()
                                                                       else do
                                                                             let ls' = mID:ls
+                                                                            liftIO $ putStrLn ("new mess ID:" ++ (show mID))
                                                                             put (MyState gam tmvar ls' m)
                                                     liftIO $ atomically $ putTMVar tmvar tmvarContents'
                                         Just pimvar -> do
@@ -82,12 +83,13 @@ reduce (Output pi1' pi2' piproc)   = do
                                                         if canReadOwn then return ()
                                                                       else do
                                                                             let ls' = replacementID:ls
+                                                                            liftIO $ putStrLn ("ID:" ++ (show replacementID))
                                                                             put (MyState gam tmvar ls' m)
                                                         liftIO $ atomically $ putTMVar tmvar tmvarContents
                                                         
                                       --at this point we have put the message out there and can continue
                                       --put the TMVar back.
-                                      liftIO $ putStrLn ("OUTPUT ON: " ++ (show pi1) ++ "::" ++ (show pi2))
+                                      --liftIO $ putStrLn ("OUTPUT ON: " ++ (show pi1) ++ "::" ++ (show pi2))
                                       --liftIO yield
                                       reduce piproc
 reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)
@@ -109,13 +111,14 @@ reduce (Input pi1' pi2 piproc)   = do
                                         Nothing     -> liftIO $ putStrLn "This should never happen ever. ever ever."
                                         Just pimvar -> do 
                                                         inputMessage <- if canReReceive then liftIO $ takeMVar pimvar
-                                                                                        else waitForFresh pimvar
+                                                                                        else waitForFresh pimvar 0
                                                         --inputMessage <-liftIO $ takeMVar pimvar
                                                         let ls' = (snd inputMessage) : ls
                                                         let piMess = fst inputMessage
                                                         (MyState gam tmvP ls m) <- get
                                                         let gam' = (VarBind (pi2, piMess)):gam
-                                                        put (MyState gam' tmvP ls' m)
+                                                        if canBroadcast then put (MyState gam' tmvP ls' m)
+                                                                          else return ()
                                                         liftIO $ putMVar pimvar inputMessage
                                     reduce piproc                 
 reduce (Restriction pi1 piproc)  = do
@@ -169,14 +172,15 @@ reduce (CaseDecrypt encrypted' var key' piproc) = do
                                                          else return Stuck
                                                     (_) -> return Stuck
 
-waitForFresh :: (MVar (Pi,Int)) -> MyStateTMonad (Pi,Int)
-waitForFresh mvarP = do
+waitForFresh :: (MVar (Pi,Int)) ->Int -> MyStateTMonad (Pi,Int)
+waitForFresh mvarP counter = do
                         x@(mess,i) <- liftIO $ takeMVar mvarP
                         (MyState gam glob ls m) <- get
                         if elem i ls then do 
                                             liftIO $ putMVar mvarP x
                                             liftIO yield --a little nudge in the right direction
-                                            waitForFresh mvarP
+                                            if counter> 1000000 then error "looping forever waiting for new message"
+                                                               else waitForFresh mvarP (counter +1)
                                      else return x 
 getMessageID :: MyStateTMonad Int
 getMessageID = do

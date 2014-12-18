@@ -2,7 +2,7 @@
 module SpiTypes where
 
 import Control.Monad
-import Control.Monad.State.Lazy
+import Control.Monad.State.Strict
 import Control.Concurrent.STM.TMVar
 import Control.Concurrent.MVar
 --Pi
