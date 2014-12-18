@@ -166,12 +166,14 @@ reduce (Value pi') = do
                      pi <- subIfVar pi'
                      return (Value pi)
 reduce (CaseDecrypt encrypted' var key' piproc) = do
+                                                   --liftIO $ putStrLn (show (CaseDecrypt encrypted' var key'
                                                    encrypted <- subIfVar encrypted'
                                                    key <- subIfVar key'
                                                    case encrypted of
                                                     (Encryption mess keyin) -> if keyin == key then do
-                                                       -- s <- get
-                                                       -- put ((VarBind (var, mess)):(fst s),snd s) -- update the state to have this variable
+                                                        (MyState gam tvar ls mv) <- get
+                                                        let gam' = (VarBind (var, mess)): gam 
+                                                        put (MyState gam' tvar ls mv) -- update the state to have this variable
                                                         reduce piproc
                                                          else return Stuck
                                                     (_) -> return Stuck
