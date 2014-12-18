@@ -27,7 +27,7 @@ reduce (Composition proc1 proc2)  = do
                                                          --p1 <- return (force (reduce proc1))
                                                          p1 <-runStateT (reduce proc1) s
                                                          --print "#"
-                                                         --print (fst p1)
+                                                         print (fst p1)
                                                          putMVar mv1 p1
                                                          
                                                   forkIO $ do
@@ -35,8 +35,8 @@ reduce (Composition proc1 proc2)  = do
                                                          --print "^^^^^^^^^^^^^"
                                                          --p2 <- return (force (reduce proc2))
                                                          --yield
-                                                         p2 <-runStateT ($!) (reduce proc2) s
-                                                         --print (fst p2)
+                                                         p2 <-runStateT (reduce proc2) s
+                                                         print (fst p2)
                                                          --print ("hhhhhhhhhhhhHHHHHHHHHHHHHH: ") -- ++ (show (fst p2)))
                                                          
                                                          putMVar mv2 p2
@@ -66,7 +66,7 @@ reduce (Output pi1' pi2' piproc)   = do
                                       --at this point we have put the message out there and can continue
                                       --put the TMVar back.
                                       liftIO $ putStrLn ("OUTPUT ON: " ++ (show pi1) ++ "::" ++ (show pi2))
-                                      liftIO yield
+                                      --liftIO yield
                                       reduce piproc
 reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)
 reduce (Input pi1' pi2 piproc)   = do 
@@ -90,6 +90,7 @@ reduce (Input pi1' pi2 piproc)   = do
                                                         (MyState gam tmvP) <- get
                                                         let gam' = (VarBind (pi2, inputMessage)):gam
                                                         put (MyState gam' tmvP)
+                                                        liftIO $ putMVar pimvar inputMessage
                                     reduce piproc                 
 reduce (Restriction pi1 piproc)  = do
                               (MyState g globs) <- get                                                                 
@@ -173,45 +174,55 @@ myLookup pi (t:xs) = case t of
                           VarBind (x,y) -> if x == pi then return y else myLookup pi xs 
                           _ -> myLookup pi xs                                                    
                           
+
+typeandReduce :: PiProcess -> IO () --Either String PiProcess
+typeandReduce piproc = case typeCheckPiProcess piproc of
+                            Left err -> do
+                              putStrLn (("TYPE ERROR: " ++ err));
+                                          putStrLn "";
+                                          putStrLn "";
+                                          return ()
+                            Right t  -> do
+                              putStrLn "PASSED TYPE CHECKER."
+                              putStrLn "TYPE:"
+                              print t 
+                              putStrLn ""
+                              runReduceShow piproc
+data Result = Result {
+                       finalpiproc :: PiProcess,
+                       gammaR       :: Gamma,
+                       piproctype  :: PiProcessType
+                     } deriving (Eq, Show)
+
+
+runForOutput :: PiProcess ->IO (Either String Result )
+runForOutput piproc = do
+                        case typeCheckPiProcess piproc of
+                            Left err -> return (Left ("TYPE ERROR: " ++ err))	              
+                            Right t  -> do
+                                            --putStrLn "PASSED TYPE CHECKER."
+                                            --putStrLn "TYPE:"
+                                            --print t 
+                                            --putStrLn ""
+                                            --runReduceShow piproc
+                                            x <- runReduce piproc
+                                            let gamgam = gamma (snd x)
+                                            return (Right (Result (fst x) gamgam t))
+                      
+runReduceShow term= do
+                      putStrLn "BEGINNING REDUCTION"                    
+                      x <- runReduce term
+                      putStrLn "RESULT:"
+                      print (fst x)
+                      s <- atomically $ readTMVar (globalChans (snd x))
+                      let gam = gamma (snd x)
+                      putStrLn ("Gamma: " ++ (show gam))
+                      putStrLn "END SUCCESSFUL REDUCTION"
+
+
+
                           
-simpletest = Output (Name "C") (Name "message here") (Input (Name "C") (Var "x") (Value (Var "x")))          
 
-a = Output (Name "C") (Name "Message here!") (Input (Name "C2") (Var "p") (Value (Var "p")))
-b = Input (Name "C") (Var "x") (Output (Name "C2") (Name "SENT BACK TO A") (Value (Var "x")))
-inst_ab = Composition a b  
-
-examplewhyBroken_a' = Output (Name "C_ab") (Name "Hello") 
-                    (Input (Name "C_ba") (Var "x") 
-                    (Input (Name "C_ba") (Var "y")
-                    (Value (Pair (Var "x") (Var "y"))))) 
-                    
-examplewhyBroken_b' = Input (Name "C_ab") (Var "x") 
-                    (Output (Name "C_ba") (Name "poop") --(Pair (Var "x") (Var "x"))
-                    (Output (Name "C_ba") (Name "Have a nice day Mr. A!")
-                     Nil))
-inst_broken' = Restriction (Name "C_ab") (Composition examplewhyBroken_a' examplewhyBroken_b')
-
---our protocol
---appraiser
-armored_a = OrderedOutput 1 "a" "b" (Name "InitRequestTOAttester") 
-            (Input (Name "C_ab") (Var "fromAtt1") 
-            (Input (Name "C_ab") (Var "fromAtt2") 
-            (Value (Pair (Var "fromAtt1") (Var "fromAtt2")))))
---attester
-armored_b = Input (Name "C_ab") (Var "ReqFromApp") 
-            (OrderedOutput 2 "b" "c" (Name "b + AIK") 
-            (Input (Name "C_bc") (Var "CAResponseToAtt") 
-            (OrderedOutput 4 "b" "m" (Name "pleasegiveMeas1") 
-            (Input (Name "C_bm") (Var "measurementFromMeas") 
-            (OrderedOutput 6 "b" "a" (Var "CAResponseToAtt") 
-            (OrderedOutput 7 "b" "a" (Var "measurementFromMeas") (Value (Pair (Var "ReqFromApp") (Pair (Var "CAResponseToAtt") (Var "measurementFromMeas"))))))))))
-armored_c = Input (Name "C_bc") (Var "reqToCA")
-            (OrderedOutput 3 "c" "b" (Name "pretend this is a CA cert") (Value (Var "reqToCA")))
-armored_m = Input (Name "C_bm") (Var "desE")
-            (OrderedOutput 5 "m" "b" (Name "pretend this is evidence") (Value (Var "desE")))
-inst_armored =Restriction (Name "C_bm")
-              (Restriction (Name "C_ab")
-              (Composition armored_a (Composition armored_b (Composition armored_c armored_m))))
               
               
               
