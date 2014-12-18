@@ -85,11 +85,13 @@ data PiProcessType = TOutput PiProcessType
 data GammaMembers = VarBind (Pi, Pi)
                   | Restricted Pi deriving (Show, Eq)
 type Gamma = [GammaMembers]
-type GlobalChannels = (TMVar [(Pi,MVar Pi)])
-emptyPiMVarPairList = [] :: [(Pi, MVar Pi)]
+type GlobalChannels = (TMVar [(Pi,MVar (Pi, Int))])
+emptyPiMVarPairList = [] :: [(Pi, MVar (Pi,Int))]
 data MyState = MyState {
                             gamma :: Gamma,
-                            globalChans :: GlobalChannels
+                            globalChans :: GlobalChannels,
+                            usedIDs :: [Int],
+                            globID  :: (MVar Int)
                           } deriving (Eq)
 type MyStateTMonad a = StateT MyState IO a 
 
