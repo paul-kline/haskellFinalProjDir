@@ -47,7 +47,7 @@ toRegularPi I.Nil                                          = I.Nil
 
 a_m2_shared    = Restriction (Name "C_ab") (OrderedOutput 1 "a" "s" (Name "C_ab") (OrderedOutput 3 "a" "b" (Name "Message from a to b should be here") Nil))
 s_shared       = Input (Name "C_as") (Var "x") (OrderedOutput 2 "s" "b" (Var "x") (Value (Var "x")))
-b2_shared      = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
+b2_shared      = Input (Name "C_bs") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
 inst_m2_shared = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2_shared (Composition s_shared b2_shared)))
 
 a_mSpi321 = OrderedOutput 1 "a" "b" (Encryption (Name "encrypted secret message!") (Name "SECRETabKEY")) Nil 
