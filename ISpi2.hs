@@ -185,7 +185,7 @@ waitForFresh mvarP counter = do
                         if elem i ls then do 
                                             liftIO $ putMVar mvarP x
                                             liftIO yield --a little nudge in the right direction
-                                            if counter> 1000000 then error "looping forever waiting for new message"
+                                            if counter> 10000000 then error "looping forever waiting for new message"
                                                                else waitForFresh mvarP (counter +1)
                                      else return x 
 getMessageID :: MyStateTMonad Int
