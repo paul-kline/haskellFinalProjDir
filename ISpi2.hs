@@ -27,68 +27,54 @@ runReduce piproc = do
 
 reduce :: PiProcess -> MyStateTMonad PiProcess
 reduce (Composition proc1 proc2)  = do
-                                     mv1 <- liftIO $ newEmptyMVar
-                                     mv2 <- liftIO $ newEmptyMVar
+                                     mv1 <- liftIO $ newEmptyMVar --To ensure we finish before continuing.
+                                     mv2 <- liftIO $ newEmptyMVar -- ''
                                      s <- get
                                      liftIO $ do                                                  
                                                   forkIO $ do
-                                                         --print "~~~~~~~~~~~~~~~"
-                                                         --p1 <- return (force (reduce proc1))
                                                          p1 <-runStateT (reduce proc1) s
-                                                         --print "#"
                                                          print ((show (fst p1)) !! 0)
                                                          putMVar mv1 p1
                                                          
                                                   forkIO $ do
-                                                         --print $ "second fork: "
-                                                         --print "^^^^^^^^^^^^^"
-                                                         --p2 <- return (force (reduce proc2))
-                                                         --yield
                                                          p2 <-runStateT (reduce proc2) s
                                                          print ((show (fst p2)) !! 0)
-                                                         --print ("hhhhhhhhhhhhHHHHHHHHHHHHHH: ") -- ++ (show (fst p2)))
-                                                         
                                                          putMVar mv2 p2
                                                          
-                                                         --myPrinter <- printer
-                                                         --takeMVar myPrinter
-                                                         --putStrLn "Done 2"
-                                                         --putMVar myPrinter 1
-                                     
                                      res1 <- liftIO $ takeMVar mv1
                                      res2 <- liftIO $ takeMVar mv2
                                      (MyState x y ls m) <- get
                                      let res1gamma = gamma (snd res1)
                                      let res2gamma = gamma (snd res2)
-                                     put (MyState (union res1gamma res2gamma) y ls m)
-                                     return (Composition (fst res1) (fst res2))
+                                     put (MyState (union res1gamma res2gamma) y ls m)   --currently just for compatibility with Adam's stuff.
+                                     return (Composition (fst res1) (fst res2))         --return the result of reducing the two.
 reduce (Output pi1' pi2' piproc)   = do
-                                      (MyState gamx tmvar lsx mx) <- get
-                                      tmvarContents <- liftIO $ atomically $ takeTMVar tmvar
+                                      (MyState _ tmvar _  _) <- get
+                                      tmvarContents <- liftIO $ atomically $ takeTMVar tmvar -- ----------------------------------------------------------LOCK TMVar
                                       pi1 <- subIfVar pi1'
                                       pi2 <- subIfVar pi2'
                                       liftIO $ putStrLn ("OUT:" ++ (show (Output pi1 pi2 piproc)))
-                                      (MyState gam tmvarx ls m) <- get
-                                      --tmvarContents :: [(Pi,MVar Pi,Int)]
-                                      
+                                      (MyState gam tmvarx ls m) <- get                    --the thinking here is that between getting the state and 
+                                      --tmvarContents :: [(Pi,MVar Pi,Int)]               --locking on the TMVar, the state may have changed. So now that
+                                                                                          --we have the lock, let's get the state. (mainly the current ID state (m) may have changed.)
+                                                                                          -- I believe that counter is only changed inside the lock of the TMVar. Let me check. yeah only called in this method while locked.
                                       case findMVar pi1 tmvarContents of
-                                        Nothing -> do
-                                                    mID <- getMessageID
-                                                    liftIO $ putStrLn ("new mess ID:" ++ (show mID))
+                                        Nothing -> do --No one is yet blocking on this mvar because it doesn't exist yet.
+                                                    mID <- getMessageID --compute a unique message identifier.
+                                                    liftIO $ putStrLn ("new mess ID:" ++ (show mID)) --force the messageID computation. No thunk crap.
                                                     mvr <-liftIO $ newMVar (pi2,mID)
-                                                    let tmvarContents' = (pi1,mvr):tmvarContents
-                                                    if canReadOwn then do 
-                                                                        --put (MyState gam tmvar ls m) --added idk why. only diff I see.
+                                                    let tmvarContents' = (pi1,mvr):tmvarContents --the new TMVARcontents contains the new channel-message information.
+                                                    if canReadOwn then do --if we allow ourselves to read our own messages, no action is needed here.
                                                                         return ()
-                                                                  else do
-                                                                            (MyState gam' tmvar' lsOld m') <- get 
+                                                                  else do -- we are disallowing reading own messages, add current messageID to no-no list. 
+                                                                            (MyState gam' tmvar' lsOld m') <- get --state gotten again for out of fear. shouldn't make a difference if uneccessary.  
                                                                             let ls' = mID:lsOld                                                                            
                                                                             put (MyState gam' tmvar' ls' m')
-                                                    liftIO $ atomically $ putTMVar tmvar tmvarContents'
-                                        Just pimvar -> do
-                                                        maybemvrC <- liftIO $ tryTakeMVar pimvar --leaves the MVar empty no matter what.
+                                                    liftIO $ atomically $ putTMVar tmvar tmvarContents' 
+                                        Just pimvar -> do --This channel exists. Someone could be waiting for a message. 
+                                                        maybemvrC <- liftIO $ tryTakeMVar pimvar --leaves the MVar empty no matter what. don't care about the result.
                                                         replacementID <- getMessageID
-                                                        liftIO $ putStrLn ("ID:" ++ (show replacementID)) -- must be here
+                                                        liftIO $ putStrLn ("ID:" ++ (show replacementID)) -- must be here. force computation.
                                                         liftIO $ putMVar pimvar (pi2, replacementID)
                                                         if canReadOwn then do --put (MyState gam tmvar ls m) --added idk why. only diff I see.
                                                                               return ()
@@ -97,36 +83,34 @@ reduce (Output pi1' pi2' piproc)   = do
                                                                             let ls' = replacementID:lsOld                                                                            
                                                                             put (MyState gam' tmvar' ls' m')
                                                         liftIO $ atomically $ putTMVar tmvar tmvarContents
-                                                        
+                                                                                                             -- -----------------------------------------------RELEASE TMVar
                                       --at this point we have put the message out there and can continue
-                                      --put the TMVar back.
-                                      --liftIO $ putStrLn ("OUTPUT ON: " ++ (show pi1) ++ "::" ++ (show pi2))
-                                      --liftIO yield
                                       reduce piproc
 reduce (OrderedOutput _ from to pi piproc) = reduce (Output (Name ("C_" ++ (if from < to then (from ++ to) else (to ++ from)))) pi piproc)
 reduce (Input pi1' pi2 piproc)   = do
-                                    (MyState gamx tmvarP lsx mx) <- get
-                                    tmvarC <- liftIO $ atomically $ takeTMVar tmvarP
+                                    (MyState _ tmvarP _ _) <- get
+                                    tmvarC <- liftIO $ atomically $ takeTMVar tmvarP  -- ---------------------------------------------------------------------LOCK TMVar
                                     pi1 <- subIfVar pi1'
-                                    (MyState gam tmvarPx ls m) <- get --don't get the state until we have a lock.
+                                    (MyState gam tmvarPx ls m) <- get --don't get the state until we have a lock (m could have changed).
                                     
                                   --tmvarC :: [(Pi,MVar Pi)]
-                                    liftIO $ putStrLn ("IN:" ++ (show (Input pi1 pi2 piproc)))
+                                    liftIO $ putStrLn ("IN:" ++ (show (Input pi1 pi2 piproc))) --just to see. not necessary like other prints.
                                     case findMVar pi1 tmvarC of
-                                        Nothing -> do
+                                        Nothing -> do --the MVar containing the message we are looking for doesn't exist yet. we create it, release the TMVAr so
+                                                      --another thread can edit. This way we are guranteed to at least have an empty MVar to block on here in a sec.
                                                     mvr <-liftIO $ newEmptyMVar
                                                     let tmvarContents' = (pi1,mvr):tmvarC
                                                     liftIO $ atomically $ putTMVar tmvarP tmvarContents'
                                                     liftIO $ yield
                                         Just mvr -> do
                                                         liftIO $ atomically $ putTMVar tmvarP tmvarC
-                                    --whether or not I had to put an emptyMVar there, it's there and TMVAR can be taken
+                                    --whether or not I had to put an emptyMVar there, it's there and TMVAR can be taken -------------------------------------RELEASE TMVar
                                     tmvarC' <- liftIO $ atomically $ readTMVar tmvarP --non blocking
                                     case findMVar pi1 tmvarC' of
-                                        Nothing     -> liftIO $ putStrLn "This should never happen ever. ever ever."
+                                        Nothing     -> liftIO $ putStrLn "This should never happen ever. ever ever." --like for real, we guaranteed this can't happen in the previous case statement.
                                         Just pimvar -> do 
-                                                        inputMessage <- if (and [canReReceive, canReadOwn]) then liftIO $ takeMVar pimvar
-                                                                                                            else waitForFresh pimvar 0
+                                                        inputMessage <- if (and [canReReceive, canReadOwn]) then liftIO $ takeMVar pimvar --only if we can canReReceive and canReadOwn do we not care about fresh messages.
+                                                                                                            else waitForFresh pimvar 0    --otherwise there exists some messages we wish to ignore. 
                                                         --inputMessage <-liftIO $ takeMVar pimvar
                                                         (MyState gam_ tmvP ls_ m_) <- get
                                                         let ls' = if canReReceive then ls
