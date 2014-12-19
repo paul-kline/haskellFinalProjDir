@@ -30,9 +30,25 @@ Documentation Discussion:
       communication. Yet at the same time, processes need to have a non-shared state for themselves (variable substitution).
       To achieve this ends, the reduction computation is done inside a State Transformer (inner monad IO).
       
+      Original implementation: The state was a tuple consisting of a list of variable bindings and restrictions and second element was TVar
+      [(Pi, MVar Pi)]. The TVar is to effectively communicate message between threads. Whenever a Composition term is reduced,
+      2 reduction threads are started--one for each PiProcess in the Composition. Note that this effectively also 'forks' the state. That is,
+      the list of variable bindings and restrictions (gamma) can now be changed by each PiProcess without effecting the state in other parallel reductions
+      of PiProcesses. However, each forked PiProcess reduction gets a reference to the TVar. So the TVar effectively remains global, i.e. one thread changing
+      the content of the TVar means all currently running threads see that change (since everyone references the same TVar). This is the exact behaviour we are 
+      looking for: we have a global state (TVar) and a local state (gamma) packaged within the state monad.
+      More detail about what is in the TVar: The idea is that in each "(Pi, MVar Pi)," the first
+      Pi is the channel, and the 'MVar Pi' is the content on that channel. This needs to be an MVar since a PiProcess doing an Input
+      may have gotten to its Input term before that channel was written to. IF an input term attempts to read from a channel that doesn't exist
+      (i.e. the corresponding Output term has not yet been reduced), the input term creates the channel-MVar pair with an emptyMVar and puts it
+      in the TVar part of the state, then blocks on the empty MVar until it gets written to. Complimentarily, an Output term examines the state of the TVar
+      and writes to the channel(i.e. places something in the MVar, overwriting if data present) if the channel exists. If no channel by that name is in the 
+      state of the TVar yet, a Pi-MVar pair is added to it (MVar non-empty of course).
+            The above strategy ensure that it does not matter which executes first-- an Output on a channel or an Input on a channel, it will get handled
+      properly.
+        But... There is a problem with this implementation as written. Any guesses?
       
-      There is a problem with this implementation as written. Let us look at the following example. Say we 
-      have a protocol where 'A' sends a message to 'B' and 'B' sends back 2 of whatever it receives. So say 'A'
+      Let us look at the following example. Say we have a protocol where 'A' sends a message to 'B' and 'B' sends back 2 of whatever it receives. So say 'A'
       sends "Hello," then 'B' would send "HelloHello" back to 'A'. We could write this protocol easily enough:
       
       examplewhyBroken_a = Output (Name "C_ab") (Name "Hello") 
@@ -43,10 +59,10 @@ Documentation Discussion:
                            Nil)
       inst_broken = Restriction (Name "C_ab") (Composition examplewhyBroken_a examplewhyBroken_b)
       
-      When we run this protocol, it will not behave as expected. 'A' and 'B' are running in parallel. 'A' sends
+      When we run this protocol, it will not behave as we intended (now any guesses?). 'A' and 'B' are running in parallel. 'A' sends
       "Hello" on the channel. But 'B' never gets a chance to be heard! 'A', after sending "Hello" is instantly waiting
       for something to be on that channel. And by golly, there is (it's what 'A' just put there!). So 'A' "hears itself"
-      on channel "C_ab" instead of hearing B's response.
+      on channel "C_ab" instead of hearing B's response .
       
       There are a couple different ways we could fix this. The first way that came to my mind was if we just make sure to
       only use channels unidirectionally instead of bidirectionally. In a way this 'solves the issue,' but at what cost? We are no longer 
