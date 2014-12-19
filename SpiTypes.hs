@@ -66,7 +66,7 @@ instance Show PiProcess where
         show EmptyChain                  = "EmptyChain"
         show (Value pi)                  = "Value " ++ (show pi)
         show (OrderedOutput i f t mess nproc) = "(OrderedOutput " ++ (show i) ++ " " ++ f ++ "-->" ++ t ++ " " ++ (show mess) ++ ") . " ++ (show nproc)
-        show (CaseDecrypt enc var key nproc)  = "case " ++ (show enc) ++ " of " ++ "{" ++ (show var) ++ "}^" ++ (show nproc) ++ " in " ++ (show nproc) --case L of fxgN in P
+        show (CaseDecrypt enc var key nproc)  = "case " ++ (show enc) ++ " of " ++ "{" ++ (show var) ++ "}^" ++ (show key) ++ " in " ++ (show nproc) --case L of fxgN in P
         show Stuck                           = "STUCK"
 --PiProcess types
 data PiProcessType = TOutput PiProcessType

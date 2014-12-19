@@ -18,19 +18,7 @@ import Control.DeepSeq
 
 import SpiTypes
 
-printTMVarStuff x = do
-                    str <- printTMVarStuff' x
-                    putStrLn str
-                    
-printTMVarStuff' :: [(Pi,MVar Pi)] -> IO String
-printTMVarStuff' [] = return ""
-printTMVarStuff' (x:xs) = do
-                        content <- takeMVar (snd x)
-                        putMVar (snd x) content
-                        rest <- printTMVarStuff' xs
-                        return ("(" ++ (show (fst x)) ++ ", " ++ (show content) ++ ")\n" ++ rest )
-                        
---mystateT = 
+
 
 
 	  
@@ -53,6 +41,7 @@ piprocINVALIDCaseStuck = Case Zero (Succ Zero) (Value (Name "Shouldn't get here"
 a_m231 = Output (Name "C_ab") Zero Nil --A(M) sends zero on channel AB
 b231   = Input (Name "C_ab") (Var "x") (Restriction (Var "x") Nil)
 inst_m231 = Restriction (Name "C_ab") (Composition a_m231 b231)
+inst_m231' = Restriction (Name "C_ab") (Composition b231 a_m231)
 
 a_m231BADChan = Output (Name "C_az") Zero Nil --A(M) sends zero on channel AB
 b231BADChan   = Input (Name "C_ab") (Var "x") (Restriction (Var "x") Nil)
@@ -70,10 +59,7 @@ s'       = Input (Name "C_as") (Var "x") (Output (Name "C_sb") (Var "x") (Value 
 b2'      = Input (Name "C_sb") (Var "x") (Input (Var "x") (Var "messageFromA") (Value (Var "messageFromA"))) --(Input (Var "xb") (Var "messageFromA") Nil)
 inst_m2' = Restriction (Name "C_as") (Restriction (Name "C_sb") (Composition a_m2' (Composition s' b2')))
 
-myPrint :: String -> IO ()
-myPrint str = do
-                atomically $ C.unsafeIOToSTM (print str)
-                return ()
+
 --our protocol
 --appraiser
 armored_a = OrderedOutput 1 "a" "b" (Name "InitRequestTOAttester") 
@@ -132,16 +118,28 @@ examplewhyBroken_bf = Input (Name "C_ab") (Var "x")
                      Nil)
 inst_brokenf = Restriction (Name "C_ab") (Composition examplewhyBroken_af examplewhyBroken_bf)
 
-broadcast_a = Output (Name "C") (Name "Hello") 
+broadcast_asilly = Output (Name "C") (Name "Hello") 
                     (Input (Name "C") (Var "x") 
                     (Input (Name "C") (Var "y")
                     (Value (Pair (Var "x") (Var "y"))))) 
-broadcast_b = Input (Name "C") (Var "x") 
+broadcast_bsilly = Input (Name "C") (Var "x") 
                     (Output (Name "C") (Pair (Name "B got:") (Var "x")) --(Pair (Var "x") (Var "x"))
                     Nil )
-broadcast_c = Input (Name "C") (Var "x") 
+broadcast_csilly = Input (Name "C") (Var "x") 
                     (Output (Name "C") (Pair (Name "C got:") (Var "x")) --(Pair (Var "x") (Var "x"))
                     Nil )
+inst_broadcastsilly = Composition broadcast_asilly (Composition broadcast_bsilly broadcast_csilly)
+
+broadcast_a = Output (Name "C") (Name "Hello") 
+                    (Input (Name "C_ab") (Var "x") 
+                    (Input (Name "C_ac") (Var "y")
+                    (Value (Pair (Var "x") (Var "y"))))) 
+broadcast_b = Input (Name "C") (Var "x") 
+                    (Output (Name "C_ab") (Pair (Name "B got:") (Var "x")) --(Pair (Var "x") (Var "x"))
+                    (Value (Var "x")))
+broadcast_c = Input (Name "C") (Var "x") 
+                    (Output (Name "C_ac") (Pair (Name "C got:") (Var "x")) --(Pair (Var "x") (Var "x"))
+                    (Value (Var "x") ))
 inst_broadcast = Composition broadcast_a (Composition broadcast_b broadcast_c)
 
 b_a = Output (Name "c") (Name "mess") Nil
