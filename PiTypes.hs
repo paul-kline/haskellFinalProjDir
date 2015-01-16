@@ -1,5 +1,9 @@
 module PiTypes where
-{-This module contains the Pi types which are used in the PiProcess types. -}
+{-This module contains the Pi types which are used in the PiProcess types. 
+  Based off the SPI Calculus defined in this paper:
+  "A Calculus for Cryptographic Protocols The Spi Calculus"
+  http://apotheca.hpl.hp.com/ftp/pub/DEC/SRC/publications/ma/spi-dist2.pdf
+  -}
 import Control.Monad
 --Pi
 data Pi = Name String
@@ -74,7 +78,7 @@ instance Show PiProcess where
            = "!" ++ (show piproc)
         show (Match pi1 pi2 piproc)      
            = "[" ++ (show pi1) ++ " is " ++ (show pi2) ++ "] " ++ (show piproc) 
-   --[M is N] P
+            --[M is N] P
         show Nil                         
            = "Nil "
         show (Let (pi1,pi2) pi3 piproc)  
