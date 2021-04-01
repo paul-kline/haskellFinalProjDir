@@ -1,0 +1,2 @@
+# haskellFinalProjDir
+#Spi Calculus evaluator
